@@ -11,6 +11,7 @@ import {
   RotateCcw,
   CheckCircle2,
   HardDrive,
+  Cloud,
   Cpu,
   Globe,
   FileCheck,
@@ -144,14 +145,14 @@ export default function SettingsView({
 
           <div style={{ padding: '10px', borderRadius: 'var(--r-md)', background: 'var(--bg-surface2)', border: '1px solid var(--clr-border)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px', color: 'var(--clr-text3)', fontSize: '10px', fontWeight: 700 }}>
-              <HardDrive size={14} color="var(--clr-orange)" />
-              <span>STORAGE</span>
+              <Cloud size={14} color="var(--clr-primary, #0284c7)" />
+              <span>STORAGE MODE</span>
             </div>
             <div style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--clr-text)' }}>
-              Offline First
+              Hybrid Mode
             </div>
             <div style={{ fontSize: '0.72rem', color: 'var(--clr-text3)', marginTop: '2px' }}>
-              LocalStorage
+              Offline-First + Cloud Sync
             </div>
           </div>
 
