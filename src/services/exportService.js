@@ -3,6 +3,7 @@ import { jsPDF } from 'jspdf';
 import { LOCALIZED_REJECTION_CODES, LOCALIZED_DOWNTIME_CODES } from '../i18n/translations.js';
 import { RADIANCE_LOGO_BASE64 } from '../assets/logoBase64.js';
 import { downloadWorkbook } from './dataUploadService.js';
+import { getRejectionCodes, getDowntimeCodes } from './storageService.js';
 
 /**
  * Exports a beautifully styled, audit-ready single-sheet Excel report.
@@ -2247,19 +2248,835 @@ export function exportDryRunCertificatePDF(data = {}) {
 }
 
 /**
- * Exports a consolidated Master Production Ledger Excel containing all shift reports.
- * Designed specifically for laptop master sheet offline review & audit.
- * @param {Array} reports
- * @param {string} customTitle
+ * In-cell graphical data bar renderer for Excel cells
+ * Creates a clear visual progress bar directly in standard spreadsheet viewers (Excel, Sheets, LibreOffice, WPS).
  */
-export function exportConsolidatedMasterSheetToExcel(reports = [], customTitle = 'Radiance Polymers - Production Master Ledger') {
-  if (!Array.isArray(reports) || reports.length === 0) {
-    if (typeof alert !== 'undefined') alert('No shift reports available to export.');
-    return { success: false, error: 'No reports to export' };
+function renderDataBar(percent, width = 10) {
+  const p = Math.max(0, Math.min(100, Number(percent) || 0));
+  const filled = Math.round((p / 100) * width);
+  const empty = width - filled;
+  return '█'.repeat(filled) + '░'.repeat(empty) + ` ${p.toFixed(1)}%`;
+}
+
+/**
+ * Builds the comprehensive, color-coded Executive Production Dashboard worksheet
+ * Positioned as the first sheet in the Master Excel workbook.
+ */
+function buildMasterDashboardSheet(reports = [], customTitle = 'Radiance Polymers - Executive Production Dashboard') {
+  const masterRejections = typeof getRejectionCodes === 'function' ? getRejectionCodes() : [];
+  const masterDowntimes = typeof getDowntimeCodes === 'function' ? getDowntimeCodes() : [];
+
+  const getRejName = (code) => {
+    if (!code) return 'General Defect';
+    const m = masterRejections.find(r => r.code === code || r.rejectionCode === code);
+    if (m && (m.reason || m.name || m.description)) return m.reason || m.name || m.description;
+    if (LOCALIZED_REJECTION_CODES?.en && LOCALIZED_REJECTION_CODES.en[code]) return LOCALIZED_REJECTION_CODES.en[code];
+    return `Defect Code ${code}`;
+  };
+
+  const getDtInfo = (code) => {
+    if (!code) return { reason: 'Unspecified Delay', category: 'Operational' };
+    const m = masterDowntimes.find(d => d.code === code || d.downtimeCode === code);
+    if (m) {
+      return {
+        reason: m.reason || m.name || m.description || `Downtime Code ${code}`,
+        category: m.category || 'Moulding'
+      };
+    }
+    if (LOCALIZED_DOWNTIME_CODES?.en && LOCALIZED_DOWNTIME_CODES.en[code]) {
+      return {
+        reason: LOCALIZED_DOWNTIME_CODES.en[code],
+        category: 'Moulding'
+      };
+    }
+    return {
+      reason: `Downtime Code ${code}`,
+      category: 'Operational'
+    };
+  };
+
+  let grandTarget = 0;
+  let grandProd = 0;
+  let grandAcc = 0;
+  let grandRej = 0;
+  let grandDt = 0;
+  let totalHourlyLogs = 0;
+
+  const rejectionMap = {}; // code -> { code, reason, qty, occurrences }
+  const downtimeMap = {};  // code -> { code, reason, category, minutes, occurrences }
+  const machineStats = {}; // machine -> { machineNumber, shiftsCount, target, prod, acc, rej, dt }
+  const shiftStats = {
+    'Shift A': { name: 'Shift A (Day)', count: 0, target: 0, prod: 0, acc: 0, rej: 0, dt: 0 },
+    'Shift B': { name: 'Shift B (Night)', count: 0, target: 0, prod: 0, acc: 0, rej: 0, dt: 0 }
+  };
+  const datesSet = new Set();
+
+  reports.forEach(report => {
+    if (report.reportDate) datesSet.add(report.reportDate);
+    const mc = report.machineNumber || 'MC03';
+    if (!machineStats[mc]) {
+      machineStats[mc] = { machineNumber: mc, shiftsCount: 0, target: 0, prod: 0, acc: 0, rej: 0, dt: 0 };
+    }
+    machineStats[mc].shiftsCount++;
+
+    const rawShift = (report.shift || 'Shift A').trim();
+    const shiftKey = rawShift.includes('B') || rawShift.includes('2') || rawShift.toLowerCase().includes('night') ? 'Shift B' : 'Shift A';
+    shiftStats[shiftKey].count++;
+
+    const sessions = report.mouldSessions || report.sessions || [];
+    let rTarget = 0;
+    let rProd = 0;
+    let rAcc = 0;
+    let rRej = 0;
+    let rDt = 0;
+
+    const processEntry = (e) => {
+      totalHourlyLogs++;
+      const tgt = Number(e.theoreticalTarget) || 0;
+      const prd = Number(e.productionQty) || 0;
+      const acc = Number(e.acceptedQty) || 0;
+      const rej = Number(e.rejectionQty) || 0;
+      const dt = Number(e.downtimeMinutes) || 0;
+
+      rTarget += tgt;
+      rProd += prd;
+      rAcc += acc;
+      rRej += rej;
+      rDt += dt;
+
+      // Rejections breakdown
+      if (Array.isArray(e.rejectionBreakdown) && e.rejectionBreakdown.length > 0) {
+        e.rejectionBreakdown.forEach(rb => {
+          const code = rb.code || 'UNKNOWN';
+          const q = Number(rb.qty || rb.quantity) || 0;
+          const rName = rb.reason || getRejName(code);
+          if (!rejectionMap[code]) {
+            rejectionMap[code] = { code, reason: rName, qty: 0, occurrences: 0 };
+          }
+          rejectionMap[code].qty += q;
+          rejectionMap[code].occurrences++;
+        });
+      } else if (e.primaryRejectionCode) {
+        const code = e.primaryRejectionCode;
+        const rName = getRejName(code);
+        if (!rejectionMap[code]) {
+          rejectionMap[code] = { code, reason: rName, qty: 0, occurrences: 0 };
+        }
+        rejectionMap[code].qty += rej;
+        rejectionMap[code].occurrences++;
+      } else if (rej > 0) {
+        const code = 'UNSPECIFIED';
+        if (!rejectionMap[code]) {
+          rejectionMap[code] = { code, reason: 'Unspecified Defects', qty: 0, occurrences: 0 };
+        }
+        rejectionMap[code].qty += rej;
+        rejectionMap[code].occurrences++;
+      }
+
+      // Downtime breakdown
+      if (Array.isArray(e.downtimeBreakdown) && e.downtimeBreakdown.length > 0) {
+        e.downtimeBreakdown.forEach(db => {
+          const code = db.code || 'UNKNOWN';
+          const m = Number(db.minutes) || 0;
+          const info = getDtInfo(code);
+          const rName = db.reason || info.reason;
+          const rCat = db.category || info.category;
+          if (!downtimeMap[code]) {
+            downtimeMap[code] = { code, reason: rName, category: rCat, minutes: 0, occurrences: 0 };
+          }
+          downtimeMap[code].minutes += m;
+          downtimeMap[code].occurrences++;
+        });
+      } else if (e.primaryDowntimeCode) {
+        const code = e.primaryDowntimeCode;
+        const info = getDtInfo(code);
+        if (!downtimeMap[code]) {
+          downtimeMap[code] = { code, reason: info.reason, category: info.category, minutes: 0, occurrences: 0 };
+        }
+        downtimeMap[code].minutes += dt;
+        downtimeMap[code].occurrences++;
+      } else if (dt > 0) {
+        const code = 'OTHER';
+        if (!downtimeMap[code]) {
+          downtimeMap[code] = { code, reason: 'Unspecified Delay', category: 'Operational', minutes: 0, occurrences: 0 };
+        }
+        downtimeMap[code].minutes += dt;
+        downtimeMap[code].occurrences++;
+      }
+    };
+
+    sessions.forEach(s => (s.entries || []).forEach(processEntry));
+    if (sessions.length === 0 && Array.isArray(report.entries)) {
+      report.entries.forEach(processEntry);
+    }
+
+    grandTarget += rTarget;
+    grandProd += rProd;
+    grandAcc += rAcc;
+    grandRej += rRej;
+    grandDt += rDt;
+
+    machineStats[mc].target += rTarget;
+    machineStats[mc].prod += rProd;
+    machineStats[mc].acc += rAcc;
+    machineStats[mc].rej += rRej;
+    machineStats[mc].dt += rDt;
+
+    shiftStats[shiftKey].target += rTarget;
+    shiftStats[shiftKey].prod += rProd;
+    shiftStats[shiftKey].acc += rAcc;
+    shiftStats[shiftKey].rej += rRej;
+    shiftStats[shiftKey].dt += rDt;
+  });
+
+  // OEE Mathematical Computations
+  const plannedMinutes = Math.max(60, totalHourlyLogs * 60 || reports.length * 12 * 60 || 720);
+  const operatingMinutes = Math.max(0, plannedMinutes - grandDt);
+  const availabilityRate = plannedMinutes > 0 ? Math.min(100, Math.max(0, (operatingMinutes / plannedMinutes) * 100)) : 100;
+  const performanceRate = grandTarget > 0 ? (grandProd / grandTarget) * 100 : 100;
+  const clampedPerformance = Math.min(100, Math.max(0, performanceRate));
+  const qualityRate = grandProd > 0 ? Math.min(100, Math.max(0, (grandAcc / grandProd) * 100)) : 100;
+  const overallOEE = (availabilityRate / 100) * (clampedPerformance / 100) * (qualityRate / 100) * 100;
+
+  const rejectionRate = grandProd > 0 ? (grandRej / grandProd) * 100 : 0;
+  const defectPpm = grandProd > 0 ? Math.round((grandRej / grandProd) * 1000000) : 0;
+  const efficiencyRate = grandTarget > 0 ? (grandProd / grandTarget) * 100 : 100;
+
+  let oeeRatingText = 'WORLD CLASS (>=85%)';
+  let oeeFillColor = 'DCFCE7'; // soft green
+  let oeeTextColor = '15803D'; // dark green
+  if (overallOEE < 50) {
+    oeeRatingText = 'CRITICAL GAP (<50%)';
+    oeeFillColor = 'FEE2E2';
+    oeeTextColor = 'B91C1C';
+  } else if (overallOEE < 70) {
+    oeeRatingText = 'ATTENTION NEEDED (50-69%)';
+    oeeFillColor = 'FEF3C7';
+    oeeTextColor = 'B45309';
+  } else if (overallOEE < 85) {
+    oeeRatingText = 'GOOD OPERATIONAL (70-84%)';
+    oeeFillColor = 'DBEAFE';
+    oeeTextColor = '1D4ED8';
   }
 
-  const wb = XLSX.utils.book_new();
+  // Sorted lists for Pareto
+  const rejectionList = Object.values(rejectionMap).sort((a, b) => b.qty - a.qty);
+  const downtimeList = Object.values(downtimeMap).sort((a, b) => b.minutes - a.minutes);
 
+  const datesArr = Array.from(datesSet).sort();
+  const dateRangeStr = datesArr.length > 1 ? `${datesArr[0]} to ${datesArr[datesArr.length - 1]}` : (datesArr[0] || 'Current Date');
+
+  // Assembly of Dashboard Rows
+  const rows = [];
+  const styles = {}; // cell address -> style object
+
+  // Helper to push styled row
+  const pushRow = (rowCells, rowStyles = null) => {
+    const rIdx = rows.length;
+    rows.push(rowCells);
+    if (rowStyles) {
+      Object.keys(rowStyles).forEach(cIdx => {
+        const addr = XLSX.utils.encode_cell({ r: rIdx, c: Number(cIdx) });
+        styles[addr] = rowStyles[cIdx];
+      });
+    }
+  };
+
+  const borderThin = {
+    top: { style: 'thin', color: { rgb: 'CBD5E1' } },
+    bottom: { style: 'thin', color: { rgb: 'CBD5E1' } },
+    left: { style: 'thin', color: { rgb: 'CBD5E1' } },
+    right: { style: 'thin', color: { rgb: 'CBD5E1' } }
+  };
+
+  const borderDoubleBottom = {
+    top: { style: 'thin', color: { rgb: '0F172A' } },
+    bottom: { style: 'double', color: { rgb: '0F172A' } },
+    left: { style: 'thin', color: { rgb: 'CBD5E1' } },
+    right: { style: 'thin', color: { rgb: 'CBD5E1' } }
+  };
+
+  const styleSectionHeader = (bgColorRgb) => ({
+    font: { name: 'Segoe UI', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+    fill: { fgColor: { rgb: bgColorRgb } },
+    alignment: { horizontal: 'left', vertical: 'center' }
+  });
+
+  const styleTableHdr = {
+    font: { name: 'Segoe UI', sz: 10, bold: true, color: { rgb: 'FFFFFF' } },
+    fill: { fgColor: { rgb: '1E293B' } },
+    alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+    border: borderThin
+  };
+
+  const styleCellCenter = {
+    font: { name: 'Segoe UI', sz: 9.5, color: { rgb: '0F172A' } },
+    alignment: { horizontal: 'center', vertical: 'center' },
+    border: borderThin
+  };
+
+  const styleCellLeft = {
+    font: { name: 'Segoe UI', sz: 9.5, color: { rgb: '0F172A' } },
+    alignment: { horizontal: 'left', vertical: 'center' },
+    border: borderThin
+  };
+
+  const styleCellRight = {
+    font: { name: 'Segoe UI', sz: 9.5, color: { rgb: '0F172A' } },
+    alignment: { horizontal: 'right', vertical: 'center' },
+    border: borderThin
+  };
+
+  const styleTotalRow = {
+    font: { name: 'Segoe UI', sz: 10, bold: true, color: { rgb: '0F172A' } },
+    fill: { fgColor: { rgb: 'E2E8F0' } },
+    alignment: { horizontal: 'right', vertical: 'center' },
+    border: borderDoubleBottom
+  };
+
+  // --- 1. Title Banner ---
+  pushRow(['RADIANCE POLYMERS PVT. LTD.'], {
+    0: { font: { name: 'Segoe UI', sz: 14, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '1E293B' } }, alignment: { horizontal: 'center', vertical: 'center' } }
+  });
+  pushRow(['EXECUTIVE PLANT PERFORMANCE, OEE & PRODUCTION AUDIT DASHBOARD'], {
+    0: { font: { name: 'Segoe UI', sz: 10.5, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '334155' } }, alignment: { horizontal: 'center', vertical: 'center' } }
+  });
+  pushRow([
+    `Audit Period: ${dateRangeStr}`,
+    `Total Reports: ${reports.length} Shifts`,
+    `Active Machines: ${Object.keys(machineStats).length}`,
+    `Shift A: ${shiftStats['Shift A'].count} | Shift B: ${shiftStats['Shift B'].count}`,
+    '', '', '', '', '',
+    `Generated: ${new Date().toLocaleString()}`
+  ], {
+    0: { font: { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: '334155' } }, fill: { fgColor: { rgb: 'F1F5F9' } }, alignment: { horizontal: 'left' } },
+    1: { font: { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: '334155' } }, fill: { fgColor: { rgb: 'F1F5F9' } }, alignment: { horizontal: 'center' } },
+    2: { font: { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: '334155' } }, fill: { fgColor: { rgb: 'F1F5F9' } }, alignment: { horizontal: 'center' } },
+    3: { font: { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: '334155' } }, fill: { fgColor: { rgb: 'F1F5F9' } }, alignment: { horizontal: 'center' } },
+    9: { font: { name: 'Segoe UI', sz: 8.5, italic: true, color: { rgb: '64748B' } }, fill: { fgColor: { rgb: 'F1F5F9' } }, alignment: { horizontal: 'right' } }
+  });
+  pushRow([]); // Spacer
+
+  // --- 2. OEE Executive Benchmark Ribbon ---
+  pushRow(['1. OVERALL EQUIPMENT EFFECTIVENESS (OEE) EXECUTIVE BENCHMARK'], {
+    0: styleSectionHeader('1E3A8A') // Indigo 900
+  });
+  pushRow([
+    'OVERALL PLANT OEE', '',
+    'AVAILABILITY (A)', '',
+    'PERFORMANCE (P)', '',
+    'QUALITY RATE (Q)', '',
+    'OEE BENCHMARK STATUS', ''
+  ], {
+    0: { font: { name: 'Segoe UI', sz: 9.5, bold: true, color: { rgb: '1E3A8A' } }, fill: { fgColor: { rgb: 'DBEAFE' } }, alignment: { horizontal: 'center' }, border: borderThin },
+    2: { font: { name: 'Segoe UI', sz: 9.5, bold: true, color: { rgb: '1E40AF' } }, fill: { fgColor: { rgb: 'EFF6FF' } }, alignment: { horizontal: 'center' }, border: borderThin },
+    4: { font: { name: 'Segoe UI', sz: 9.5, bold: true, color: { rgb: '3730A3' } }, fill: { fgColor: { rgb: 'EEF2FF' } }, alignment: { horizontal: 'center' }, border: borderThin },
+    6: { font: { name: 'Segoe UI', sz: 9.5, bold: true, color: { rgb: '166534' } }, fill: { fgColor: { rgb: 'F0FDF4' } }, alignment: { horizontal: 'center' }, border: borderThin },
+    8: { font: { name: 'Segoe UI', sz: 9.5, bold: true, color: { rgb: oeeTextColor } }, fill: { fgColor: { rgb: oeeFillColor } }, alignment: { horizontal: 'center' }, border: borderThin }
+  });
+  pushRow([
+    `${overallOEE.toFixed(1)}%`, '',
+    `${availabilityRate.toFixed(1)}%`, '',
+    `${performanceRate.toFixed(1)}%`, '',
+    `${qualityRate.toFixed(1)}%`, '',
+    oeeRatingText, ''
+  ], {
+    0: { font: { name: 'Segoe UI', sz: 14, bold: true, color: { rgb: oeeTextColor } }, fill: { fgColor: { rgb: oeeFillColor } }, alignment: { horizontal: 'center', vertical: 'center' }, border: borderThin },
+    2: { font: { name: 'Segoe UI', sz: 13, bold: true, color: { rgb: '1E40AF' } }, fill: { fgColor: { rgb: 'EFF6FF' } }, alignment: { horizontal: 'center', vertical: 'center' }, border: borderThin },
+    4: { font: { name: 'Segoe UI', sz: 13, bold: true, color: { rgb: '3730A3' } }, fill: { fgColor: { rgb: 'EEF2FF' } }, alignment: { horizontal: 'center', vertical: 'center' }, border: borderThin },
+    6: { font: { name: 'Segoe UI', sz: 13, bold: true, color: { rgb: '166534' } }, fill: { fgColor: { rgb: 'F0FDF4' } }, alignment: { horizontal: 'center', vertical: 'center' }, border: borderThin },
+    8: { font: { name: 'Segoe UI', sz: 11, bold: true, color: { rgb: oeeTextColor } }, fill: { fgColor: { rgb: oeeFillColor } }, alignment: { horizontal: 'center', vertical: 'center' }, border: borderThin }
+  });
+  pushRow([
+    `World Class Standard: >= 85%`, '',
+    `Operating: ${(operatingMinutes/60).toFixed(1)}h / ${(plannedMinutes/60).toFixed(1)}h`, '',
+    `Actual: ${grandProd.toLocaleString()} / Tgt: ${grandTarget.toLocaleString()}`, '',
+    `Accepted: ${grandAcc.toLocaleString()} / Rej: ${grandRej.toLocaleString()}`, '',
+    `Efficiency: ${efficiencyRate.toFixed(1)}% | Rej: ${rejectionRate.toFixed(2)}%`, ''
+  ], {
+    0: { font: { name: 'Segoe UI', sz: 8.5, color: { rgb: '475569' } }, fill: { fgColor: { rgb: 'F8FAFC' } }, alignment: { horizontal: 'center' }, border: borderThin },
+    2: { font: { name: 'Segoe UI', sz: 8.5, color: { rgb: '475569' } }, fill: { fgColor: { rgb: 'F8FAFC' } }, alignment: { horizontal: 'center' }, border: borderThin },
+    4: { font: { name: 'Segoe UI', sz: 8.5, color: { rgb: '475569' } }, fill: { fgColor: { rgb: 'F8FAFC' } }, alignment: { horizontal: 'center' }, border: borderThin },
+    6: { font: { name: 'Segoe UI', sz: 8.5, color: { rgb: '475569' } }, fill: { fgColor: { rgb: 'F8FAFC' } }, alignment: { horizontal: 'center' }, border: borderThin },
+    8: { font: { name: 'Segoe UI', sz: 8.5, bold: true, color: { rgb: '475569' } }, fill: { fgColor: { rgb: 'F8FAFC' } }, alignment: { horizontal: 'center' }, border: borderThin }
+  });
+  pushRow([]); // Spacer
+
+  // --- 3. Core Manufacturing Operational Scorecard ---
+  pushRow(['2. CORE MANUFACTURING PRODUCTION SCORECARD'], {
+    0: styleSectionHeader('1E293B')
+  });
+  pushRow([
+    'Key Metric Indicator',
+    'Value / Volume',
+    'Unit of Measure',
+    'Target Benchmark',
+    'Variance / Delta',
+    'Operating Health Status',
+    'Visual Bar Graph'
+  ], {
+    0: styleTableHdr, 1: styleTableHdr, 2: styleTableHdr, 3: styleTableHdr, 4: styleTableHdr, 5: styleTableHdr, 6: styleTableHdr
+  });
+
+  const scorecardItems = [
+    { label: 'Total Planned / Theoretical Target', val: grandTarget, unit: 'Pcs', bench: `${grandTarget} Pcs`, delta: '0 Pcs', status: 'PLANNED', bar: renderDataBar(100, 10), fill: 'F8FAFC' },
+    { label: 'Total Gross Production Output', val: grandProd, unit: 'Pcs', bench: `${grandTarget} Pcs`, delta: `${grandProd - grandTarget >= 0 ? '+' : ''}${grandProd - grandTarget} Pcs`, status: grandProd >= grandTarget ? 'ON TARGET' : 'UNDER TARGET', bar: renderDataBar(efficiencyRate, 10), fill: grandProd >= grandTarget ? 'DCFCE7' : 'FEF3C7' },
+    { label: 'Total Accepted / Good Output', val: grandAcc, unit: 'Pcs', bench: `${grandProd} Pcs`, delta: `${grandAcc - grandProd} Pcs`, status: 'INSPECTED & PASSED', bar: renderDataBar(qualityRate, 10), fill: 'DCFCE7' },
+    { label: 'Total Defect / Rejection Volume', val: grandRej, unit: 'Pcs', bench: '< 2.0% of Output', delta: `${grandRej} Pcs`, status: rejectionRate <= 2.0 ? 'ACCEPTABLE' : 'HIGH DEFECTS', bar: renderDataBar(rejectionRate * 5, 10), fill: rejectionRate <= 2.0 ? 'F0FDF4' : 'FEE2E2' },
+    { label: 'Quality Rejection Rate (%)', val: `${rejectionRate.toFixed(2)}%`, unit: 'Percent (%)', bench: '< 2.00%', delta: `${rejectionRate <= 2 ? 'In-Spec' : 'Out-of-Spec'}`, status: rejectionRate <= 2.0 ? 'WITHIN LIMIT' : 'EXCEEDED THRESHOLD', bar: renderDataBar(rejectionRate * 5, 10), fill: rejectionRate <= 2.0 ? 'F0FDF4' : 'FEE2E2' },
+    { label: 'Quality Defect PPM (Parts Per Million)', val: `${defectPpm.toLocaleString()} PPM`, unit: 'PPM', bench: '< 20,000 PPM', delta: `${defectPpm} PPM`, status: defectPpm <= 20000 ? 'GOOD' : 'CRITICAL DEFECTS', bar: renderDataBar((defectPpm / 50000) * 100, 10), fill: defectPpm <= 20000 ? 'F0FDF4' : 'FEE2E2' },
+    { label: 'Total Downtime / Lost Operating Time', val: `${grandDt} Min (${(grandDt/60).toFixed(1)} Hrs)`, unit: 'Minutes / Hours', bench: '< 10% of Planned', delta: `${((grandDt / plannedMinutes) * 100).toFixed(1)}% Lost`, status: (grandDt / plannedMinutes) <= 0.1 ? 'CONTROLLED' : 'EXCESSIVE DOWNTIME', bar: renderDataBar((grandDt / plannedMinutes) * 100, 10), fill: (grandDt / plannedMinutes) <= 0.1 ? 'FFFBEB' : 'FEF3C7' },
+    { label: 'Net Machine Running / Operating Time', val: `${operatingMinutes} Min (${(operatingMinutes/60).toFixed(1)} Hrs)`, unit: 'Minutes / Hours', bench: `${(plannedMinutes/60).toFixed(1)} Hrs`, delta: `${((operatingMinutes / plannedMinutes) * 100).toFixed(1)}% Active`, status: availabilityRate >= 90 ? 'HEALTHY RUN' : 'SHORT RUN', bar: renderDataBar(availabilityRate, 10), fill: availabilityRate >= 90 ? 'DCFCE7' : 'FEF3C7' },
+    { label: 'Overall Shift Production Efficiency', val: `${efficiencyRate.toFixed(1)}%`, unit: 'Percent (%)', bench: '>= 95.0%', delta: `${(efficiencyRate - 100).toFixed(1)}%`, status: efficiencyRate >= 95 ? 'OPTIMAL' : (efficiencyRate >= 80 ? 'ACCEPTABLE' : 'SUBOPTIMAL'), bar: renderDataBar(efficiencyRate, 10), fill: efficiencyRate >= 95 ? 'DCFCE7' : (efficiencyRate >= 80 ? 'DBEAFE' : 'FEE2E2') }
+  ];
+
+  scorecardItems.forEach(item => {
+    pushRow([
+      item.label,
+      typeof item.val === 'number' ? item.val.toLocaleString() : item.val,
+      item.unit,
+      item.bench,
+      item.delta,
+      item.status,
+      item.bar
+    ], {
+      0: { ...styleCellLeft, font: { name: 'Segoe UI', sz: 9.5, bold: true, color: { rgb: '1E293B' } } },
+      1: { ...styleCellRight, font: { name: 'Segoe UI', sz: 10, bold: true, color: { rgb: '0F172A' } }, fill: { fgColor: { rgb: item.fill } } },
+      2: styleCellCenter,
+      3: styleCellCenter,
+      4: styleCellCenter,
+      5: { ...styleCellCenter, font: { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: '334155' } }, fill: { fgColor: { rgb: item.fill } } },
+      6: { ...styleCellLeft, font: { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: '0F172A' } } }
+    });
+  });
+  pushRow([]); // Spacer
+
+  // --- 4. Cumulative Reason-Wise Rejection Analysis (Pareto 80/20) ---
+  pushRow(['3. CUMULATIVE REASON-WISE REJECTION ANALYSIS (PARETO 80/20 DEFECT RANKING)'], {
+    0: styleSectionHeader('7F1D1D') // Dark Red 900
+  });
+  pushRow([
+    'Rank',
+    'Defect Code',
+    'Defect / Failure Description',
+    'Total Rejected (Pcs)',
+    'Defect Share (%)',
+    'Cumulative Share (%)',
+    'Defect Impact Level',
+    'Graphical Defect Distribution Bar',
+    'Logged Occurrences'
+  ], {
+    0: styleTableHdr, 1: styleTableHdr, 2: styleTableHdr, 3: styleTableHdr, 4: styleTableHdr, 5: styleTableHdr, 6: styleTableHdr, 7: styleTableHdr, 8: styleTableHdr
+  });
+
+  if (rejectionList.length === 0) {
+    pushRow([
+      '#1', 'CLEAN', 'Zero Rejections Logged Across Audited Shifts', 0, '0.00%', '0.0%', 'OPTIMAL (ZERO DEFECTS)', renderDataBar(0, 10), 0
+    ], {
+      0: styleCellCenter, 1: styleCellCenter, 2: styleCellLeft, 3: styleCellRight, 4: styleCellRight, 5: styleCellRight, 6: styleCellCenter, 7: styleCellCenter, 8: styleCellCenter
+    });
+  } else {
+    let cumRej = 0;
+    rejectionList.forEach((r, idx) => {
+      cumRej += r.qty;
+      const share = grandRej > 0 ? (r.qty / grandRej) * 100 : 0;
+      const cumShare = grandRej > 0 ? (cumRej / grandRej) * 100 : 0;
+      const impact = share >= 25 ? 'CRITICAL DEFECT (>25%)' : (share >= 10 ? 'HIGH DEFECT (10-25%)' : 'MODERATE DEFECT (<10%)');
+      const bar = renderDataBar(share, 10);
+      const rowFill = share >= 25 ? 'FEE2E2' : (share >= 10 ? 'FFF1F2' : 'FFFFFF');
+
+      pushRow([
+        `#${idx + 1}`,
+        r.code,
+        r.reason,
+        r.qty,
+        share.toFixed(2) + '%',
+        cumShare.toFixed(1) + '%',
+        impact,
+        bar,
+        r.occurrences
+      ], {
+        0: { ...styleCellCenter, font: { name: 'Segoe UI', sz: 9, bold: true } },
+        1: { ...styleCellCenter, font: { name: 'Segoe UI', sz: 9.5, bold: true, color: { rgb: '991B1B' } }, fill: { fgColor: { rgb: rowFill } } },
+        2: { ...styleCellLeft, fill: { fgColor: { rgb: rowFill } } },
+        3: { ...styleCellRight, font: { name: 'Segoe UI', sz: 9.5, bold: true }, fill: { fgColor: { rgb: rowFill } } },
+        4: { ...styleCellRight, fill: { fgColor: { rgb: rowFill } } },
+        5: { ...styleCellRight, font: { name: 'Segoe UI', sz: 9, bold: true }, fill: { fgColor: { rgb: rowFill } } },
+        6: { ...styleCellCenter, font: { name: 'Segoe UI', sz: 8.5, bold: true, color: { rgb: share >= 25 ? '991B1B' : '475569' } }, fill: { fgColor: { rgb: rowFill } } },
+        7: { ...styleCellLeft, font: { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: '991B1B' } }, fill: { fgColor: { rgb: rowFill } } },
+        8: { ...styleCellCenter, fill: { fgColor: { rgb: rowFill } } }
+      });
+    });
+  }
+
+  // Summary Row Rejection
+  pushRow([
+    'TOTAL REJECTIONS AUDITED', '', '',
+    grandRej,
+    '100.00%',
+    '100.0%',
+    rejectionRate <= 2.0 ? 'WITHIN SPEC (<2%)' : 'ACTION REQUIRED',
+    renderDataBar(100, 10),
+    rejectionList.reduce((s, r) => s + r.occurrences, 0)
+  ], {
+    0: styleTotalRow, 1: styleTotalRow, 2: styleTotalRow, 3: styleTotalRow, 4: styleTotalRow, 5: styleTotalRow, 6: styleTotalRow, 7: styleTotalRow, 8: styleTotalRow
+  });
+  pushRow([]); // Spacer
+
+  // --- 5. Cumulative Reason-Wise Downtime Analysis (Pareto Ranked) ---
+  pushRow(['4. CUMULATIVE REASON-WISE DOWNTIME ANALYSIS (LOST TIME & ROOT CAUSE AUDIT)'], {
+    0: styleSectionHeader('78350F') // Amber 900
+  });
+  pushRow([
+    'Rank',
+    'DT Code',
+    'Category',
+    'Downtime Root Cause Description',
+    'Lost Time (Minutes)',
+    'Lost Time (Hours)',
+    'Downtime Share (%)',
+    'Cumulative Share (%)',
+    'Severity Level',
+    'Graphical Downtime Distribution Bar',
+    'Logged Occurrences'
+  ], {
+    0: styleTableHdr, 1: styleTableHdr, 2: styleTableHdr, 3: styleTableHdr, 4: styleTableHdr, 5: styleTableHdr, 6: styleTableHdr, 7: styleTableHdr, 8: styleTableHdr, 9: styleTableHdr, 10: styleTableHdr
+  });
+
+  if (downtimeList.length === 0) {
+    pushRow([
+      '#1', 'ZERO_DT', 'Operational', 'Zero Downtime Recorded Across Audited Shifts', 0, '0.0 hrs', '0.00%', '0.0%', 'OPTIMAL (100% RUNTIME)', renderDataBar(0, 10), 0
+    ], {
+      0: styleCellCenter, 1: styleCellCenter, 2: styleCellCenter, 3: styleCellLeft, 4: styleCellRight, 5: styleCellRight, 6: styleCellRight, 7: styleCellRight, 8: styleCellCenter, 9: styleCellCenter, 10: styleCellCenter
+    });
+  } else {
+    let cumDt = 0;
+    downtimeList.forEach((d, idx) => {
+      cumDt += d.minutes;
+      const share = grandDt > 0 ? (d.minutes / grandDt) * 100 : 0;
+      const cumShare = grandDt > 0 ? (cumDt / grandDt) * 100 : 0;
+      const hours = (d.minutes / 60).toFixed(1) + ' hrs';
+      const severity = share >= 25 ? 'CRITICAL BOTTLENECK (>25%)' : (share >= 10 ? 'MAJOR DOWNTIME (10-25%)' : 'MINOR DOWNTIME (<10%)');
+      const bar = renderDataBar(share, 10);
+      const rowFill = share >= 25 ? 'FEF3C7' : (share >= 10 ? 'FFFBEB' : 'FFFFFF');
+
+      pushRow([
+        `#${idx + 1}`,
+        d.code,
+        d.category,
+        d.reason,
+        d.minutes,
+        hours,
+        share.toFixed(2) + '%',
+        cumShare.toFixed(1) + '%',
+        severity,
+        bar,
+        d.occurrences
+      ], {
+        0: { ...styleCellCenter, font: { name: 'Segoe UI', sz: 9, bold: true } },
+        1: { ...styleCellCenter, font: { name: 'Segoe UI', sz: 9.5, bold: true, color: { rgb: '92400E' } }, fill: { fgColor: { rgb: rowFill } } },
+        2: { ...styleCellCenter, fill: { fgColor: { rgb: rowFill } } },
+        3: { ...styleCellLeft, fill: { fgColor: { rgb: rowFill } } },
+        4: { ...styleCellRight, font: { name: 'Segoe UI', sz: 9.5, bold: true }, fill: { fgColor: { rgb: rowFill } } },
+        5: { ...styleCellRight, fill: { fgColor: { rgb: rowFill } } },
+        6: { ...styleCellRight, fill: { fgColor: { rgb: rowFill } } },
+        7: { ...styleCellRight, font: { name: 'Segoe UI', sz: 9, bold: true }, fill: { fgColor: { rgb: rowFill } } },
+        8: { ...styleCellCenter, font: { name: 'Segoe UI', sz: 8.5, bold: true, color: { rgb: share >= 25 ? '92400E' : '475569' } }, fill: { fgColor: { rgb: rowFill } } },
+        9: { ...styleCellLeft, font: { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: '92400E' } }, fill: { fgColor: { rgb: rowFill } } },
+        10: { ...styleCellCenter, fill: { fgColor: { rgb: rowFill } } }
+      });
+    });
+  }
+
+  // Summary Row Downtime
+  pushRow([
+    'TOTAL DOWNTIME AUDITED', '', '', '',
+    grandDt,
+    `${(grandDt / 60).toFixed(1)} hrs`,
+    '100.00%',
+    '100.0%',
+    (grandDt / plannedMinutes) <= 0.1 ? 'WITHIN LIMIT (<10%)' : 'ACTION REQUIRED',
+    renderDataBar(100, 10),
+    downtimeList.reduce((s, d) => s + d.occurrences, 0)
+  ], {
+    0: styleTotalRow, 1: styleTotalRow, 2: styleTotalRow, 3: styleTotalRow, 4: styleTotalRow, 5: styleTotalRow, 6: styleTotalRow, 7: styleTotalRow, 8: styleTotalRow, 9: styleTotalRow, 10: styleTotalRow
+  });
+  pushRow([]); // Spacer
+
+  // --- 6. Shift-Wise Comparative Analysis (Shift A vs Shift B) ---
+  pushRow(['5. SHIFT-WISE COMPARATIVE ANALYSIS (SHIFT A DAY vs SHIFT B NIGHT)'], {
+    0: styleSectionHeader('1E40AF') // Blue 800
+  });
+  pushRow([
+    'Shift Timing / Name',
+    'Logged Shifts',
+    'Target Output (Pcs)',
+    'Actual Produced (Pcs)',
+    'Accepted Output (Pcs)',
+    'Rejections (Pcs)',
+    'Rejection Rate (%)',
+    'Downtime (Min)',
+    'Lost Hours',
+    'Availability (%)',
+    'Performance (%)',
+    'Quality (%)',
+    'Shift OEE (%)',
+    'Visual OEE Progress Bar'
+  ], {
+    0: styleTableHdr, 1: styleTableHdr, 2: styleTableHdr, 3: styleTableHdr, 4: styleTableHdr, 5: styleTableHdr, 6: styleTableHdr, 7: styleTableHdr, 8: styleTableHdr, 9: styleTableHdr, 10: styleTableHdr, 11: styleTableHdr, 12: styleTableHdr, 13: styleTableHdr
+  });
+
+  ['Shift A', 'Shift B'].forEach(shiftKey => {
+    const s = shiftStats[shiftKey];
+    const sPlanned = Math.max(60, s.count * 12 * 60 || 720);
+    const sOperating = Math.max(0, sPlanned - s.dt);
+    const sAvail = sPlanned > 0 ? (sOperating / sPlanned) * 100 : 100;
+    const sPerf = s.target > 0 ? (s.prod / s.target) * 100 : 100;
+    const sClampedPerf = Math.min(100, Math.max(0, sPerf));
+    const sQual = s.prod > 0 ? (s.acc / s.prod) * 100 : 100;
+    const sOee = (sAvail / 100) * (sClampedPerf / 100) * (sQual / 100) * 100;
+    const sRejRate = s.prod > 0 ? (s.rej / s.prod) * 100 : 0;
+    const bar = renderDataBar(sOee, 10);
+
+    pushRow([
+      s.name,
+      s.count,
+      s.target,
+      s.prod,
+      s.acc,
+      s.rej,
+      sRejRate.toFixed(2) + '%',
+      s.dt,
+      (s.dt / 60).toFixed(1) + ' hrs',
+      sAvail.toFixed(1) + '%',
+      sPerf.toFixed(1) + '%',
+      sQual.toFixed(1) + '%',
+      sOee.toFixed(1) + '%',
+      bar
+    ], {
+      0: { ...styleCellLeft, font: { name: 'Segoe UI', sz: 9.5, bold: true, color: { rgb: '1E3A8A' } } },
+      1: styleCellCenter,
+      2: styleCellRight,
+      3: styleCellRight,
+      4: styleCellRight,
+      5: styleCellRight,
+      6: { ...styleCellCenter, font: { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: sRejRate <= 2 ? '15803D' : 'B91C1C' } } },
+      7: styleCellRight,
+      8: styleCellRight,
+      9: styleCellCenter,
+      10: styleCellCenter,
+      11: styleCellCenter,
+      12: { ...styleCellCenter, font: { name: 'Segoe UI', sz: 10, bold: true, color: { rgb: sOee >= 85 ? '15803D' : (sOee >= 70 ? '1D4ED8' : 'B45309') } } },
+      13: { ...styleCellLeft, font: { name: 'Segoe UI', sz: 9, bold: true } }
+    });
+  });
+  pushRow([]); // Spacer
+
+  // --- 7. Machine-Wise Fleet Performance Audit ---
+  pushRow(['6. MACHINE-WISE FLEET PRODUCTION & PERFORMANCE AUDIT'], {
+    0: styleSectionHeader('14532D') // Green 900
+  });
+  pushRow([
+    'Machine #',
+    'Logged Shifts',
+    'Target (Pcs)',
+    'Produced (Pcs)',
+    'Accepted (Pcs)',
+    'Rejection (Pcs)',
+    'Rej Rate (%)',
+    'Downtime (Min)',
+    'Operating Time',
+    'Availability (%)',
+    'Performance (%)',
+    'Quality (%)',
+    'Machine OEE (%)',
+    'Visual OEE Bar',
+    'Machine Health Status'
+  ], {
+    0: styleTableHdr, 1: styleTableHdr, 2: styleTableHdr, 3: styleTableHdr, 4: styleTableHdr, 5: styleTableHdr, 6: styleTableHdr, 7: styleTableHdr, 8: styleTableHdr, 9: styleTableHdr, 10: styleTableHdr, 11: styleTableHdr, 12: styleTableHdr, 13: styleTableHdr, 14: styleTableHdr
+  });
+
+  const machineKeys = Object.keys(machineStats).sort();
+  machineKeys.forEach(mc => {
+    const m = machineStats[mc];
+    const mPlanned = Math.max(60, m.shiftsCount * 12 * 60 || 720);
+    const mOperating = Math.max(0, mPlanned - m.dt);
+    const mAvail = mPlanned > 0 ? (mOperating / mPlanned) * 100 : 100;
+    const mPerf = m.target > 0 ? (m.prod / m.target) * 100 : 100;
+    const mClampedPerf = Math.min(100, Math.max(0, mPerf));
+    const mQual = m.prod > 0 ? (m.acc / m.prod) * 100 : 100;
+    const mOee = (mAvail / 100) * (mClampedPerf / 100) * (mQual / 100) * 100;
+    const mRejRate = m.prod > 0 ? (m.rej / m.prod) * 100 : 0;
+    const bar = renderDataBar(mOee, 10);
+    const status = mOee >= 85 ? 'OPTIMAL' : (mOee >= 70 ? 'ACCEPTABLE' : 'ATTENTION');
+    const statusFill = mOee >= 85 ? 'DCFCE7' : (mOee >= 70 ? 'DBEAFE' : 'FEF3C7');
+
+    pushRow([
+      m.machineNumber,
+      m.shiftsCount,
+      m.target,
+      m.prod,
+      m.acc,
+      m.rej,
+      mRejRate.toFixed(2) + '%',
+      m.dt,
+      `${(mOperating / 60).toFixed(1)} hrs`,
+      mAvail.toFixed(1) + '%',
+      mPerf.toFixed(1) + '%',
+      mQual.toFixed(1) + '%',
+      mOee.toFixed(1) + '%',
+      bar,
+      status
+    ], {
+      0: { ...styleCellCenter, font: { name: 'Segoe UI', sz: 9.5, bold: true, color: { rgb: '14532D' } } },
+      1: styleCellCenter,
+      2: styleCellRight,
+      3: styleCellRight,
+      4: styleCellRight,
+      5: styleCellRight,
+      6: { ...styleCellCenter, font: { name: 'Segoe UI', sz: 9, bold: true, color: mRejRate <= 2 ? { rgb: '15803D' } : { rgb: 'B91C1C' } } },
+      7: styleCellRight,
+      8: styleCellRight,
+      9: styleCellCenter,
+      10: styleCellCenter,
+      11: styleCellCenter,
+      12: { ...styleCellCenter, font: { name: 'Segoe UI', sz: 10, bold: true, color: { rgb: mOee >= 85 ? '15803D' : (mOee >= 70 ? '1D4ED8' : 'B45309') } } },
+      13: { ...styleCellLeft, font: { name: 'Segoe UI', sz: 9, bold: true } },
+      14: { ...styleCellCenter, font: { name: 'Segoe UI', sz: 9, bold: true }, fill: { fgColor: { rgb: statusFill } } }
+    });
+  });
+  pushRow([]); // Spacer
+
+  // --- 8. Executive Root-Cause Pareto Drivers & Engineering Action Plan ---
+  pushRow(['7. EXECUTIVE ROOT-CAUSE PARETO DRIVERS & CORRECTIVE ACTION PLAN'], {
+    0: styleSectionHeader('334155') // Slate 700
+  });
+  pushRow([
+    'Focus Area',
+    'Rank / Priority',
+    'Root Cause / Failure Mode',
+    'Loss Magnitude (Pcs / Hrs)',
+    'Share of Total (%)',
+    'Root Cause Category',
+    'Recommended Corrective Countermeasure / Engineering Action Plan'
+  ], {
+    0: styleTableHdr, 1: styleTableHdr, 2: styleTableHdr, 3: styleTableHdr, 4: styleTableHdr, 5: styleTableHdr, 6: styleTableHdr
+  });
+
+  // Top 3 Rejections
+  const top3Rejections = rejectionList.slice(0, 3);
+  if (top3Rejections.length === 0) {
+    pushRow(['Rejection Quality', 'Tier 1', 'No quality defects logged', '0 Pcs', '0.00%', 'Process', 'Maintain standard mould maintenance and temperature profiles.']);
+  } else {
+    top3Rejections.forEach((r, i) => {
+      const share = grandRej > 0 ? ((r.qty / grandRej) * 100).toFixed(1) + '%' : '0.0%';
+      let action = 'Check injection speed, pack pressure, and cooling water temperature.';
+      if (r.code === 'A') action = 'Optimize pre-heating cycle and purge barrel prior to first trial shot.';
+      else if (r.code === 'B') action = 'Verify clamp alignment and nozzle seat engagement during mould change.';
+      else if (r.code === 'C') action = 'Increase holding pressure and check runner gate freeze time.';
+      else if (r.code === 'D') action = 'Reduce injection pressure and check parting line clamping force.';
+      else if (r.code === 'E') action = 'Ensure dehumidified resin drying and check material hopper desiccant.';
+
+      pushRow([
+        'Quality Defect',
+        `Priority #${i + 1}`,
+        `[${r.code}] ${r.reason}`,
+        `${r.qty.toLocaleString()} Pcs`,
+        share,
+        'Tooling / Process',
+        action
+      ], {
+        0: { ...styleCellLeft, font: { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: '991B1B' } }, fill: { fgColor: { rgb: 'FEE2E2' } } },
+        1: styleCellCenter,
+        2: { ...styleCellLeft, font: { name: 'Segoe UI', sz: 9.5, bold: true } },
+        3: styleCellRight,
+        4: styleCellCenter,
+        5: styleCellCenter,
+        6: { ...styleCellLeft, font: { name: 'Segoe UI', sz: 9, color: { rgb: '0F172A' } } }
+      });
+    });
+  }
+
+  // Top 3 Downtimes
+  const top3Downtimes = downtimeList.slice(0, 3);
+  if (top3Downtimes.length === 0) {
+    pushRow(['Downtime Uptime', 'Tier 1', 'Zero machine downtime recorded', '0 Hrs', '0.00%', 'Maintenance', 'Maintain current preventive maintenance schedule and PM checklists.']);
+  } else {
+    top3Downtimes.forEach((d, i) => {
+      const share = grandDt > 0 ? ((d.minutes / grandDt) * 100).toFixed(1) + '%' : '0.0%';
+      let action = 'Execute fast SMED changeover standard and stage clamps/pre-heated tool in advance.';
+      if (d.code === 'MC') action = 'Implement SMED protocol; pre-heat next mould and pre-stage all water couplings.';
+      else if (d.code === 'MB') action = 'Inspect hydraulic oil pressure, pump filters, and check proportional valve seals.';
+      else if (d.code === 'EB') action = 'Inspect heater band continuity, thermocouples, and clean control cabinet fans.';
+      else if (d.code === 'MS') action = 'Audit hopper levels and establish 2-hour advance buffer staging in raw material bay.';
+
+      pushRow([
+        'Plant Uptime',
+        `Priority #${i + 1}`,
+        `[${d.code}] ${d.reason}`,
+        `${(d.minutes / 60).toFixed(1)} Hrs (${d.minutes}m)`,
+        share,
+        d.category || 'Maintenance',
+        action
+      ], {
+        0: { ...styleCellLeft, font: { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: '92400E' } }, fill: { fgColor: { rgb: 'FEF3C7' } } },
+        1: styleCellCenter,
+        2: { ...styleCellLeft, font: { name: 'Segoe UI', sz: 9.5, bold: true } },
+        3: styleCellRight,
+        4: styleCellCenter,
+        5: styleCellCenter,
+        6: { ...styleCellLeft, font: { name: 'Segoe UI', sz: 9, color: { rgb: '0F172A' } } }
+      });
+    });
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+
+  // Apply column widths
+  ws['!cols'] = [
+    { wch: 22 }, // Col 0 (A)
+    { wch: 18 }, // Col 1 (B)
+    { wch: 32 }, // Col 2 (C)
+    { wch: 18 }, // Col 3 (D)
+    { wch: 16 }, // Col 4 (E)
+    { wch: 18 }, // Col 5 (F)
+    { wch: 18 }, // Col 6 (G)
+    { wch: 22 }, // Col 7 (H)
+    { wch: 18 }, // Col 8 (I)
+    { wch: 22 }, // Col 9 (J)
+    { wch: 26 }, // Col 10 (K)
+    { wch: 16 }, // Col 11 (L)
+    { wch: 16 }, // Col 12 (M)
+    { wch: 22 }, // Col 13 (N)
+    { wch: 20 }  // Col 14 (O)
+  ];
+
+  // Apply cell styles to worksheet
+  Object.keys(styles).forEach(addr => {
+    if (!ws[addr]) ws[addr] = { t: 's', v: '' };
+    ws[addr].s = styles[addr];
+  });
+
+  // Ensure title banner row spans nicely across columns
+  try {
+    for (let c = 0; c <= 8; c++) {
+      const a0 = XLSX.utils.encode_cell({ r: 0, c });
+      if (!ws[a0]) ws[a0] = { t: 's', v: '' };
+      ws[a0].s = { font: { name: 'Segoe UI', sz: 14, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '1E293B' } }, alignment: { horizontal: 'center', vertical: 'center' } };
+
+      const a1 = XLSX.utils.encode_cell({ r: 1, c });
+      if (!ws[a1]) ws[a1] = { t: 's', v: '' };
+      ws[a1].s = { font: { name: 'Segoe UI', sz: 10, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '334155' } }, alignment: { horizontal: 'center', vertical: 'center' } };
+    }
+  } catch (e) {}
+
+  return ws;
+}
+
+/**
+ * Builds the Master Production Ledger worksheet (raw entry-by-entry ledger)
+ */
+function buildMasterLedgerSheet(reports = [], customTitle = 'Radiance Polymers - Master Production Ledger') {
   let grandTarget = 0;
   let grandProd = 0;
   let grandAcc = 0;
@@ -2422,10 +3239,38 @@ export function exportConsolidatedMasterSheetToExcel(reports = [], customTitle =
     }
   } catch (e) {}
 
-  XLSX.utils.book_append_sheet(wb, ws, 'Master Production Ledger');
+  return ws;
+}
+
+/**
+ * Exports a consolidated Master Production Workbook containing:
+ * 1. Executive KPI Dashboard (OEE, cumulative reason-wise downtime & rejections, visual bars, color codes)
+ * 2. Master Production Ledger (itemized shift reports audit trail)
+ * @param {Array} reports
+ * @param {string} customTitle
+ */
+export function exportConsolidatedMasterSheetToExcel(reports = [], customTitle = 'Radiance Polymers - Production Master Ledger') {
+  if (!Array.isArray(reports) || reports.length === 0) {
+    if (typeof alert !== 'undefined') alert('No shift reports available to export.');
+    return { success: false, error: 'No reports to export' };
+  }
+
+  const wb = XLSX.utils.book_new();
+
+  // 1. Build Executive KPI Dashboard worksheet (Sheet 1, placed first)
+  const wsDashboard = buildMasterDashboardSheet(reports, customTitle);
+
+  // 2. Build Master Production Ledger worksheet (Sheet 2)
+  const wsLedger = buildMasterLedgerSheet(reports, customTitle);
+
+  // Append sheets in exact requested order: Dashboard FIRST, then Master Ledger
+  XLSX.utils.book_append_sheet(wb, wsDashboard, 'Executive KPI Dashboard');
+  XLSX.utils.book_append_sheet(wb, wsLedger, 'Master Production Ledger');
+
   const filename = `Radiance_Production_Master_Ledger_${new Date().toISOString().split('T')[0]}.xlsx`;
   downloadWorkbook(wb, filename);
   return { success: true, filename };
 }
+
 
 

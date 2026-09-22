@@ -751,18 +751,24 @@ export function saveParts(parts) {
 }
 
 export function getRejectionCodes() {
+  if (typeof localStorage === 'undefined') return [];
   return JSON.parse(localStorage.getItem(KEYS.REJECTION_CODES) || '[]');
 }
 export function saveRejectionCodes(codes) {
-  localStorage.setItem(KEYS.REJECTION_CODES, JSON.stringify(codes));
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(KEYS.REJECTION_CODES, JSON.stringify(codes));
+  }
   syncMasterDataToCloudBackground();
 }
 
 export function getDowntimeCodes() {
+  if (typeof localStorage === 'undefined') return [];
   return JSON.parse(localStorage.getItem(KEYS.DOWNTIME_CODES) || '[]');
 }
 export function saveDowntimeCodes(codes) {
-  localStorage.setItem(KEYS.DOWNTIME_CODES, JSON.stringify(codes));
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(KEYS.DOWNTIME_CODES, JSON.stringify(codes));
+  }
   syncMasterDataToCloudBackground();
 }
 
