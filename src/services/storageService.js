@@ -145,24 +145,27 @@ export function initializeStorage() {
     localStorage.setItem(KEYS.SHIFT_REPORTS, JSON.stringify([]));
   }
 
-  // Migration guard v2: force-clear sample/demo parts, machines, mappings, moulds.
-  // Parts must only come from user-uploaded Part Master Excel.
-  const PARTS_CLEARED_FLAG = 'rp_parts_cleared_v2';
-  if (!localStorage.getItem(PARTS_CLEARED_FLAG)) {
-    localStorage.setItem(KEYS.PARTS, JSON.stringify([]));
-    localStorage.setItem(KEYS.MACHINES, JSON.stringify([]));
-    localStorage.setItem(KEYS.MOULDS, JSON.stringify([]));
-    localStorage.setItem(KEYS.MACHINE_PART_MAPPINGS, JSON.stringify([]));
-    localStorage.setItem(PARTS_CLEARED_FLAG, 'true');
-  }
-  // Migration guard: Clean slate for production entries on new deployment
-  const PROD_CLEARED_FLAG = 'rp_production_entries_cleared_v5';
+  // Clean slate for production entries (Reset all old production test data)
+  const PROD_CLEARED_FLAG = 'rp_production_entries_cleared_v7';
   if (!localStorage.getItem(PROD_CLEARED_FLAG)) {
     localStorage.setItem(KEYS.SHIFT_REPORTS, JSON.stringify([]));
     localStorage.removeItem(KEYS.ACTIVE_REPORT_ID);
     localStorage.setItem(KEYS.SYNC_QUEUE, JSON.stringify([]));
     localStorage.setItem(PROD_CLEARED_FLAG, 'true');
   }
+
+  // Permanent Master Data Guarantee:
+  // If parts or machines exist, preserve them permanently. If empty, ensure initial master is populated.
+  try {
+    const existingParts = JSON.parse(localStorage.getItem(KEYS.PARTS) || '[]');
+    if (!existingParts || existingParts.length === 0) {
+      localStorage.setItem(KEYS.PARTS, JSON.stringify(INITIAL_PARTS));
+    }
+    const existingMachines = JSON.parse(localStorage.getItem(KEYS.MACHINES) || '[]');
+    if (!existingMachines || existingMachines.length === 0) {
+      localStorage.setItem(KEYS.MACHINES, JSON.stringify(INITIAL_MACHINES));
+    }
+  } catch (e) {}
 
   // Run auto-migration for machine numbering standardization (MC01..MC99)
   migrateMachineNumbering();

@@ -15,7 +15,9 @@ import {
   Plus,
   Shield,
   ShieldCheck,
-  Filter
+  Filter,
+  Lock,
+  Edit3
 } from 'lucide-react';
 import {
   downloadUnifiedPartMasterTemplate,
@@ -27,6 +29,7 @@ import {
 } from '../services/dataUploadService';
 import {
   saveUnifiedMasterData,
+  saveParts,
   getRejectionCodes,
   saveRejectionCodes,
   getDowntimeCodes,
@@ -72,6 +75,24 @@ export default function PartMasterView({
   const [showAddOperator, setShowAddOperator] = useState(false);
   const [newOpName, setNewOpName] = useState('');
   const [newOpCode, setNewOpCode] = useState('');
+
+  // Handle inline update of Actual Cycle Time
+  const handleActualCycleTimeChange = (partId, value) => {
+    const num = parseFloat(value);
+    const updated = parts.map(p => {
+      if (p.id === partId || p.partNumber === partId || p.partCode === partId) {
+        return {
+          ...p,
+          actualCycleTimeSeconds: isNaN(num) || num <= 0 ? (p.standardCycleTimeSeconds || 20) : num
+        };
+      }
+      return p;
+    });
+    saveParts(updated);
+    if (onRefreshData) {
+      onRefreshData();
+    }
+  };
 
   // Template Download Handlers with clear path confirmation
   const handleDownloadPartTemplate = async () => {
@@ -446,6 +467,24 @@ export default function PartMasterView({
             </div>
           </div>
 
+          {/* Cycle Time Policy Banner */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: 'rgba(59, 130, 246, 0.08)',
+            border: '1px solid rgba(59, 130, 246, 0.25)',
+            padding: '8px 12px',
+            borderRadius: '8px',
+            fontSize: '0.78rem',
+            color: 'var(--clr-text2)'
+          }}>
+            <span style={{ fontSize: '1rem' }}>🔒</span>
+            <div>
+              <strong style={{ color: 'var(--clr-primary)' }}>Standard Cycle Time</strong> is strictly locked for target calculations (<code style={{ fontFamily: 'var(--font-mono)' }}>(3600/Std) × Cavities</code>). <strong style={{ color: 'var(--clr-text)' }}>Actual Cycle Time</strong> is editable to record floor observations.
+            </div>
+          </div>
+
           {/* Parts List */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {filteredParts.length === 0 ? (
@@ -486,22 +525,67 @@ export default function PartMasterView({
                       <span className="badge badge-primary">{part.customer}</span>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', textAlign: 'center', background: 'var(--bg-surface2)', padding: '8px', borderRadius: '8px' }}>
-                      <div>
-                        <div style={{ fontSize: '0.65rem', color: 'var(--clr-text3)' }}>CYCLE</div>
-                        <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.85rem' }}>{part.standardCycleTimeSeconds}s</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))', gap: '6px', textAlign: 'center', background: 'var(--bg-surface2)', padding: '10px 8px', borderRadius: '8px' }}>
+                      {/* Standard Cycle Time - Strictly locked & used for target calculation */}
+                      <div style={{ background: 'rgba(255,255,255,0.04)', padding: '4px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <div style={{ fontSize: '0.62rem', color: 'var(--clr-text3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}>
+                          <span style={{ fontWeight: 700 }}>STD CYCLE</span>
+                          <Lock size={10} color="var(--clr-text3)" />
+                        </div>
+                        <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '0.88rem', color: 'var(--clr-primary)', marginTop: '2px' }}>
+                          {part.standardCycleTimeSeconds}s
+                        </div>
+                        <div style={{ fontSize: '0.58rem', color: 'var(--clr-text3)' }}>Target Base</div>
                       </div>
-                      <div>
-                        <div style={{ fontSize: '0.65rem', color: 'var(--clr-text3)' }}>CAVITIES</div>
-                        <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.85rem' }}>{part.cavityCount}</div>
+
+                      {/* Actual Cycle Time - Editable field */}
+                      <div style={{ background: 'rgba(255,255,255,0.04)', padding: '4px', borderRadius: '6px', border: '1px solid rgba(59, 130, 246, 0.25)' }}>
+                        <div style={{ fontSize: '0.62rem', color: 'var(--clr-text2)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}>
+                          <span style={{ fontWeight: 700 }}>ACTUAL CYCLE</span>
+                          <Edit3 size={10} color="var(--clr-primary)" />
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px', marginTop: '2px' }}>
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="1"
+                            max="999"
+                            defaultValue={part.actualCycleTimeSeconds ?? part.standardCycleTimeSeconds}
+                            onBlur={(e) => handleActualCycleTimeChange(part.id || part.partNumber || part.partCode, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') e.target.blur();
+                            }}
+                            title="Floor observed cycle time in seconds"
+                            style={{
+                              width: '46px',
+                              height: '24px',
+                              padding: '1px 2px',
+                              fontSize: '0.82rem',
+                              textAlign: 'center',
+                              fontFamily: 'var(--font-mono)',
+                              fontWeight: 700,
+                              background: 'var(--bg-card)',
+                              border: '1px solid var(--clr-primary)',
+                              borderRadius: '4px',
+                              color: 'var(--clr-text)'
+                            }}
+                          />
+                          <span style={{ fontSize: '0.7rem', color: 'var(--clr-text2)' }}>s</span>
+                        </div>
+                        <div style={{ fontSize: '0.58rem', color: 'var(--clr-primary)' }}>Observed</div>
                       </div>
-                      <div>
-                        <div style={{ fontSize: '0.65rem', color: 'var(--clr-text3)' }}>PART WT</div>
-                        <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.85rem' }}>{part.partWeightGrams}g</div>
+
+                      <div style={{ padding: '4px' }}>
+                        <div style={{ fontSize: '0.62rem', color: 'var(--clr-text3)' }}>CAVITIES</div>
+                        <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.85rem', marginTop: '4px' }}>{part.cavityCount}</div>
                       </div>
-                      <div>
-                        <div style={{ fontSize: '0.65rem', color: 'var(--clr-text3)' }}>RUNNER</div>
-                        <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.85rem' }}>{part.runnerWeightGrams}g</div>
+                      <div style={{ padding: '4px' }}>
+                        <div style={{ fontSize: '0.62rem', color: 'var(--clr-text3)' }}>PART WT</div>
+                        <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.85rem', marginTop: '4px' }}>{part.partWeightGrams}g</div>
+                      </div>
+                      <div style={{ padding: '4px' }}>
+                        <div style={{ fontSize: '0.62rem', color: 'var(--clr-text3)' }}>RUNNER</div>
+                        <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.85rem', marginTop: '4px' }}>{part.runnerWeightGrams}g</div>
                       </div>
                     </div>
 

@@ -283,14 +283,7 @@ export default function HourEntryModal({
   const [remarks,    setRemarks]    = useState(existingEntry?.remarks || '');
   const [editReason, setEditReason] = useState('');
 
-  // Dynamic code creation states
-  const [isAddingRejection,   setIsAddingRejection]   = useState(false);
-  const [newRejectionDesc,    setNewRejectionDesc]    = useState('');
-  const [isAddingDowntime,    setIsAddingDowntime]    = useState(false);
-  const [newDowntimeDesc,     setNewDowntimeDesc]     = useState('');
-  const [newDowntimeCategory, setNewDowntimeCategory] = useState('Machine Related');
-
-  const canCreateCodes = ['supervisor','production_manager','admin'].includes(currentUser?.role);
+  // Dynamic code creation disabled for operator safety (Standard plant master codes only)
 
   // Computed totals from dynamic rows
   const totalRejectionQty = rejectionRows.reduce((sum, r) => sum + (Number(r.qty) || 0), 0);
@@ -347,36 +340,6 @@ export default function HourEntryModal({
 
   const removeDowntimeRow = (id) => {
     setDowntimeRows(rows => rows.filter(d => d.id !== id));
-  };
-
-  const handleCreateRejection = () => {
-    if (!newRejectionDesc.trim()) return;
-    if (onAddDynamicRejection) {
-      const c = onAddDynamicRejection(newRejectionDesc.trim());
-      if (c) {
-        setRejectionRows(rows => [
-          ...rows,
-          { id: 'rej-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6), code: c.code, qty: '' }
-        ]);
-        setNewRejectionDesc('');
-        setIsAddingRejection(false);
-      }
-    }
-  };
-
-  const handleCreateDowntime = () => {
-    if (!newDowntimeDesc.trim()) return;
-    if (onAddDynamicDowntime) {
-      const c = onAddDynamicDowntime(newDowntimeDesc.trim(), newDowntimeCategory);
-      if (c) {
-        setDowntimeRows(rows => [
-          ...rows,
-          { id: 'dt-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6), code: c.code, minutes: '' }
-        ]);
-        setNewDowntimeDesc('');
-        setIsAddingDowntime(false);
-      }
-    }
   };
 
   const isFormSubmittable = validationResult.isValid && !unselectedDowntimeRow && !unselectedRejectionRow;
@@ -785,17 +748,6 @@ export default function HourEntryModal({
                 🔴 Rejection ({totalRejectionQty} pcs)
               </div>
               <div style={{ display: 'flex', gap: '6px' }}>
-                {canCreateCodes && (
-                  <button type="button" onClick={() => setIsAddingRejection(v => !v)} style={{
-                    display: 'flex', alignItems: 'center', gap: '3px',
-                    background: 'transparent', border: '1px solid #fca5a5',
-                    color: '#dc2626', borderRadius: '5px',
-                    padding: '3px 8px', fontSize: '0.68rem', fontWeight: 700, cursor: 'pointer'
-                  }}>
-                    <PlusCircle size={11} />
-                    {isAddingRejection ? 'Cancel' : 'New Code'}
-                  </button>
-                )}
                 <button type="button" onClick={addRejectionRow} style={{
                   display: 'flex', alignItems: 'center', gap: '3px',
                   background: '#fee2e2', border: '1px solid #fca5a5',
@@ -807,32 +759,6 @@ export default function HourEntryModal({
                 </button>
               </div>
             </div>
-
-            {/* Modal for adding dynamic rejection code */}
-            {isAddingRejection && (
-              <div style={{ background: '#fee2e2', border: '1px dashed #ef4444', borderRadius: '8px', padding: '10px' }}>
-                <div style={{ fontSize: '0.72rem', color: '#991b1b', fontWeight: 700, marginBottom: '6px' }}>
-                  New code: <strong>{generateNextRejectionCode(rejectionCodes)}</strong>
-                </div>
-                <input
-                  type="text"
-                  style={S.input({ height: '38px', borderColor: '#ef4444', marginBottom: '8px', fontSize: '0.85rem' })}
-                  value={newRejectionDesc}
-                  onChange={e => setNewRejectionDesc(e.target.value)}
-                  placeholder="e.g. Warping, Short Gate"
-                />
-                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                  <button type="button" onClick={() => setIsAddingRejection(false)}
-                    style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid #fca5a5', background: 'transparent', color: '#dc2626', fontSize: '0.75rem', cursor: 'pointer' }}>
-                    Cancel
-                  </button>
-                  <button type="button" onClick={handleCreateRejection}
-                    style={{ padding: '5px 12px', borderRadius: '6px', border: 'none', background: '#dc2626', color: '#fff', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>
-                    Save &amp; Add
-                  </button>
-                </div>
-              </div>
-            )}
 
             {/* List of Rejection Rows */}
             {rejectionRows.length === 0 ? (
@@ -903,17 +829,6 @@ export default function HourEntryModal({
                 ⏱ Downtime ({totalDowntimeMinutes} min)
               </div>
               <div style={{ display: 'flex', gap: '6px' }}>
-                {canCreateCodes && (
-                  <button type="button" onClick={() => setIsAddingDowntime(v => !v)} style={{
-                    display: 'flex', alignItems: 'center', gap: '3px',
-                    background: 'transparent', border: '1px solid #fed7aa',
-                    color: '#ea580c', borderRadius: '5px',
-                    padding: '3px 8px', fontSize: '0.68rem', fontWeight: 700, cursor: 'pointer'
-                  }}>
-                    <PlusCircle size={11} />
-                    {isAddingDowntime ? 'Cancel' : 'New Code'}
-                  </button>
-                )}
                 <button type="button" onClick={addDowntimeRow} style={{
                   display: 'flex', alignItems: 'center', gap: '3px',
                   background: '#ffedd5', border: '1px solid #fed7aa',
@@ -925,42 +840,6 @@ export default function HourEntryModal({
                 </button>
               </div>
             </div>
-
-            {/* Modal for adding dynamic downtime code */}
-            {isAddingDowntime && (
-              <div style={{ background: '#ffedd5', border: '1px dashed #fb923c', borderRadius: '8px', padding: '10px' }}>
-                <div style={{ fontSize: '0.72rem', color: '#9a3412', fontWeight: 700, marginBottom: '6px' }}>
-                  New code: <strong>{generateNextDowntimeCode(downtimeCodes)}</strong>
-                </div>
-                <select style={S.select({ height: '38px', borderColor: '#fb923c', marginBottom: '8px', fontSize: '0.82rem' })}
-                  value={newDowntimeCategory} onChange={e => setNewDowntimeCategory(e.target.value)}>
-                  <option value="Machine Related">Machine Related</option>
-                  <option value="Tool / Part Related">Tool / Part Related</option>
-                  <option value="Material Related">Material Related</option>
-                  <option value="Utility Related">Utility Related</option>
-                  <option value="Process Related">Process Related</option>
-                  <option value="Manpower Related">Manpower Related</option>
-                  <option value="Others">Other</option>
-                </select>
-                <input
-                  type="text"
-                  style={S.input({ height: '38px', borderColor: '#fb923c', marginBottom: '8px', fontSize: '0.82rem' })}
-                  value={newDowntimeDesc}
-                  onChange={e => setNewDowntimeDesc(e.target.value)}
-                  placeholder="e.g. Hydraulic Oil Leakage"
-                />
-                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                  <button type="button" onClick={() => setIsAddingDowntime(false)}
-                    style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid #fed7aa', background: 'transparent', color: '#ea580c', fontSize: '0.75rem', cursor: 'pointer' }}>
-                    Cancel
-                  </button>
-                  <button type="button" onClick={handleCreateDowntime}
-                    style={{ padding: '5px 12px', borderRadius: '6px', border: 'none', background: '#ea580c', color: '#fff', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>
-                    Save &amp; Add
-                  </button>
-                </div>
-              </div>
-            )}
 
             {/* List of Downtime Rows */}
             {downtimeRows.length === 0 ? (

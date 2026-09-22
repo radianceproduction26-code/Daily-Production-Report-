@@ -22,6 +22,7 @@ import SettingsView from './components/SettingsView';
 import DataUploadCenter from './components/DataUploadCenter';
 import PartMasterView from './components/PartMasterView';
 import MasterSheetView from './components/MasterSheetView';
+import PasswordAuthModal from './components/PasswordAuthModal';
 import { checkPilotReadiness } from './services/dataUploadService';
 import {
   pushShiftReportToCloud,
@@ -158,6 +159,51 @@ export default function App() {
   const [isNewShiftModalOpen, setIsNewShiftModalOpen] = useState(false);
   const [isSetupWizardOpen, setIsSetupWizardOpen] = useState(false);
   const [isMockValidationOpen, setIsMockValidationOpen] = useState(false);
+
+  // Supervisor PIN Protection ('2026') for non-Shifts tabs
+  const [isSupervisorUnlocked, setIsSupervisorUnlocked] = useState(() => {
+    try {
+      return sessionStorage.getItem('rp_supervisor_unlocked') === 'true';
+    } catch (e) {
+      return false;
+    }
+  });
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [pendingTab, setPendingTab] = useState(null);
+
+  const handleTabChange = (targetTab) => {
+    if (targetTab === 'console') {
+      setActiveTab('console');
+      return;
+    }
+
+    if (isSupervisorUnlocked) {
+      setActiveTab(targetTab);
+    } else {
+      setPendingTab(targetTab);
+      setPasswordModalOpen(true);
+    }
+  };
+
+  const handleUnlockSupervisor = () => {
+    try {
+      sessionStorage.setItem('rp_supervisor_unlocked', 'true');
+    } catch (e) {}
+    setIsSupervisorUnlocked(true);
+    setPasswordModalOpen(false);
+    if (pendingTab) {
+      setActiveTab(pendingTab);
+      setPendingTab(null);
+    }
+  };
+
+  const handleLockSupervisor = () => {
+    try {
+      sessionStorage.removeItem('rp_supervisor_unlocked');
+    } catch (e) {}
+    setIsSupervisorUnlocked(false);
+    setActiveTab('console');
+  };
 
   const handleOpenMouldChangeModal = (hourIndex = null) => {
     setMouldChangeHourIndex(hourIndex);
@@ -498,13 +544,15 @@ export default function App() {
         {/* 1. Header Bar */}
       <Header
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={handleTabChange}
         currentUser={currentUser}
         onSwitchUser={(user) => setCurrentUser(user)}
         usersList={USERS}
         activeReport={activeReport}
         onOpenNewShiftModal={handleOpenNewShiftModal}
         onOpenSetupWizard={() => setIsSetupWizardOpen(true)}
+        isSupervisorUnlocked={isSupervisorUnlocked}
+        onLockSupervisor={handleLockSupervisor}
       />
 
 
@@ -731,6 +779,23 @@ export default function App() {
           onClose={() => setIsMockValidationOpen(false)}
         />
       )}
+
+      {/* Supervisor PIN Protection Modal ('2026') */}
+      <PasswordAuthModal
+        isOpen={passwordModalOpen}
+        onClose={() => {
+          setPasswordModalOpen(false);
+          setPendingTab(null);
+        }}
+        onSuccess={handleUnlockSupervisor}
+        targetTabName={
+          pendingTab === 'mastersheet' ? 'Master Sheet' :
+          pendingTab === 'dashboard' ? 'Dashboard' :
+          pendingTab === 'part-master' ? 'Part Master' :
+          pendingTab === 'settings' ? 'Settings' :
+          pendingTab || 'this section'
+        }
+      />
     </div>
     </I18nProvider>
   );

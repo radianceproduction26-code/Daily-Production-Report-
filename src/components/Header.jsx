@@ -8,7 +8,9 @@ import {
   Plus,
   Globe,
   BarChart3,
-  User
+  User,
+  Lock,
+  Unlock
 } from 'lucide-react';
 import { useI18n } from '../i18n/I18nContext';
 import Logo from './Logo';
@@ -21,7 +23,9 @@ export default function Header({
   usersList = [],
   activeReport,
   onOpenNewShiftModal,
-  onOpenSetupWizard
+  onOpenSetupWizard,
+  isSupervisorUnlocked = false,
+  onLockSupervisor
 }) {
   const { toggleLanguage } = useI18n();
 
@@ -61,12 +65,38 @@ export default function Header({
             >
               <item.icon size={18} />
               <span>{item.label}</span>
+              {item.id !== 'console' && !isSupervisorUnlocked && (
+                <Lock size={12} style={{ marginLeft: '4px', opacity: 0.65 }} />
+              )}
             </button>
           ))}
         </div>
 
         {/* Top bar right: Language toggle + Supervisor button */}
         <div className="topbar-actions">
+
+          {/* If Supervisor is unlocked, show Lock button to lock back to Operator mode */}
+          {isSupervisorUnlocked && onLockSupervisor && (
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={onLockSupervisor}
+              title="Supervisor mode active. Click to lock back to Operator Shifts mode."
+              style={{
+                height: '34px',
+                padding: '0 10px',
+                gap: '4px',
+                borderColor: 'var(--clr-error)',
+                color: 'var(--clr-error)',
+                fontSize: '0.74rem',
+                fontWeight: 700,
+                borderRadius: 'var(--r-full)'
+              }}
+            >
+              <Lock size={13} />
+              <span>Lock</span>
+            </button>
+          )}
 
           {/* Language toggle */}
           <button
@@ -147,7 +177,12 @@ export default function Header({
             aria-label={item.label}
           >
             <item.icon size={22} />
-            <span>{item.label}</span>
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
+              {item.label}
+              {item.id !== 'console' && !isSupervisorUnlocked && (
+                <Lock size={10} style={{ opacity: 0.65 }} />
+              )}
+            </span>
           </button>
         ))}
 
@@ -185,7 +220,12 @@ export default function Header({
             aria-label={item.label}
           >
             <item.icon size={22} />
-            <span>{item.label}</span>
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
+              {item.label}
+              {item.id !== 'console' && !isSupervisorUnlocked && (
+                <Lock size={10} style={{ opacity: 0.65 }} />
+              )}
+            </span>
           </button>
         ))}
       </nav>
