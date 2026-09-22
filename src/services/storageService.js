@@ -154,6 +154,14 @@ export function initializeStorage() {
     localStorage.setItem(PROD_CLEARED_FLAG, 'true');
   }
 
+  // One-time reset of pre-seeded rejection & downtime reasons for fresh master upload
+  const REASONS_CLEARED_FLAG = 'rp_rejection_downtime_cleared_v1';
+  if (!localStorage.getItem(REASONS_CLEARED_FLAG)) {
+    localStorage.setItem(KEYS.REJECTION_CODES, JSON.stringify([]));
+    localStorage.setItem(KEYS.DOWNTIME_CODES, JSON.stringify([]));
+    localStorage.setItem(REASONS_CLEARED_FLAG, 'true');
+  }
+
   // Permanent Master Data Guarantee:
   // If parts or machines exist, preserve them permanently. If empty, ensure initial master is populated.
   try {
@@ -711,6 +719,16 @@ export function saveDowntimeCodes(codes) {
   syncMasterDataToCloudBackground();
 }
 
+export function clearAllRejectionCodes() {
+  localStorage.setItem(KEYS.REJECTION_CODES, JSON.stringify([]));
+  syncMasterDataToCloudBackground();
+}
+
+export function clearAllDowntimeCodes() {
+  localStorage.setItem(KEYS.DOWNTIME_CODES, JSON.stringify([]));
+  syncMasterDataToCloudBackground();
+}
+
 /**
  * Automatically generates the next sequential Rejection Code.
  * Standard sequence: A, B, C, ... Q, R, S, ... Z.
@@ -1100,7 +1118,9 @@ export function createNewShiftReport({
   startCounter
 }) {
   const effectivePart = part || mould || {};
-  const cycleTime = Number(effectivePart.standardCycleTimeSeconds) || (mould && Number(mould.standardCycleTimeSeconds)) || 20;
+  const standardCycleTime = Number(effectivePart.standardCycleTimeSeconds) || (mould && Number(mould.standardCycleTimeSeconds)) || 20;
+  const actualCycleTime = Number(effectivePart.actualCycleTimeSeconds) || Number(effectivePart.cycleTime) || standardCycleTime;
+  const cycleTime = actualCycleTime > 0 ? actualCycleTime : standardCycleTime;
   const cavities = Number(effectivePart.cavityCount) || (mould && Number(mould.cavityCount)) || 2;
   const target = calculateTheoreticalHourlyTarget(cycleTime, cavities);
   const reportId = 'rep-' + Date.now();
@@ -1111,7 +1131,7 @@ export function createNewShiftReport({
   const newReport = {
     id: reportId,
     reportDate,
-    shift,
+    shift: shift || 'Shift A',
     machineId: machine.id,
     machineNumber: machine.machineNumber,
     operatorId: operator?.id || 'u-op-01',
@@ -1143,9 +1163,11 @@ export function createNewShiftReport({
         rawMaterialGrade: effectivePart.rawMaterialGrade || 'PPCP',
         partWeightGrams: Number(effectivePart.partWeightGrams) || 42.5,
         runnerWeightGrams: Number(effectivePart.runnerWeightGrams) || 7.0,
-        standardCycleTimeSeconds: cycleTime,
+        standardCycleTimeSeconds: standardCycleTime,
+        actualCycleTimeSeconds: actualCycleTime,
+        cycleTimeSeconds: cycleTime,
         theoreticalHourlyTarget: target,
-        startTime: shift === 'Shift 1' ? '08:00' : shift === 'Shift 2' ? '16:00' : '00:00',
+        startTime: (shift === 'Shift B' || shift === 'Shift 2' || shift === 'B') ? '20:00' : '08:00',
         endTime: null,
         startCounter: Number(startCounter) || 0,
         endCounter: null,
@@ -2968,9 +2990,8 @@ export function getDailyShiftExecutionTracker(dateString) {
   );
 
   const shiftsMap = [
-    { code: 'Shift 1', alt: 'Shift A', name: 'Shift A (08:00 - 16:00)' },
-    { code: 'Shift 2', alt: 'Shift B', name: 'Shift B (16:00 - 00:00)' },
-    { code: 'Shift 3', alt: 'Shift C', name: 'Shift C (00:00 - 08:00)' }
+    { code: 'Shift A', alt: 'Shift 1', name: 'Shift A (08:00 - 20:00)' },
+    { code: 'Shift B', alt: 'Shift 2', name: 'Shift B (20:00 - 08:00)' }
   ];
 
   const shiftStatus = shiftsMap.map(s => {
@@ -3000,7 +3021,7 @@ export function getDailyShiftExecutionTracker(dateString) {
     };
   });
 
-  const totalShiftsPlanned = 3;
+  const totalShiftsPlanned = 2;
   const totalShiftsCompleted = shiftStatus.filter(s => s.isCompleted).length;
   const missingShifts = shiftStatus.filter(s => !s.isCompleted).map(s => s.name);
 

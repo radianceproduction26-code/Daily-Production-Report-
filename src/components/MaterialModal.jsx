@@ -134,38 +134,38 @@ export default function MaterialModal({
             </div>
           ))}
 
-          {/* Theoretical vs Actual Comparison Header */}
-          <div style={{ background: 'var(--bg-card)', padding: '16px 20px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-medium)', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', textAlign: 'center' }}>
+          {/* Theoretical vs Actual Comparison Header (2x2 on mobile, 4-col on tablet/desktop) */}
+          <div style={{ background: 'var(--bg-card)', padding: '12px 14px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-medium)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', textAlign: 'center' }}>
             <div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{t('kpi_gross_production')}</div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{t('kpi_gross_production')}</div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                 {totalProduction.toLocaleString()} pcs
               </div>
             </div>
             <div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{t('part_runner_wt')}</div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{t('part_runner_wt')}</div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                 {(activeSession.partWeightGrams + activeSession.runnerWeightGrams).toFixed(1)} g
               </div>
             </div>
             <div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--cyan-primary)', textTransform: 'uppercase' }}>{t('mat_theoretical_req')}</div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.25rem', fontWeight: 800, color: 'var(--cyan-primary)' }}>
+              <div style={{ fontSize: '0.72rem', color: 'var(--cyan-primary)', textTransform: 'uppercase' }}>{t('mat_theoretical_req')}</div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.15rem', fontWeight: 800, color: 'var(--cyan-primary)' }}>
                 {materialValidation.expectedUsageKg.toFixed(2)} kg
               </div>
             </div>
             <div>
-              <div style={{ fontSize: '0.75rem', color: materialValidation.isAbnormal ? '#f59e0b' : '#34d399', textTransform: 'uppercase' }}>
+              <div style={{ fontSize: '0.72rem', color: materialValidation.isAbnormal ? '#f59e0b' : '#34d399', textTransform: 'uppercase' }}>
                 {t('mat_actual_consumed')}
               </div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.25rem', fontWeight: 800, color: materialValidation.isAbnormal ? '#f59e0b' : '#34d399' }}>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.15rem', fontWeight: 800, color: materialValidation.isAbnormal ? '#f59e0b' : '#34d399' }}>
                 {totalUsedKg.toFixed(2)} kg
               </div>
             </div>
           </div>
 
-          {/* 2-Column Grid for Material 1 and Material 2 */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+          {/* Responsive Stack on Mobile, 2-Col on Tablet/Desktop for Material 1 and Material 2 */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '16px' }}>
             
             {/* MATERIAL 1 CARD */}
             <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-bright)', borderRadius: 'var(--radius-lg)', padding: '18px', display: 'flex', flexDirection: 'column', gap: '12px' }}>

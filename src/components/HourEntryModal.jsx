@@ -80,6 +80,7 @@ const S = {
   input: (extra = {}) => ({
     display: 'block',
     width: '100%',
+    minWidth: 0,
     height: '44px',
     padding: '0 12px',
     border: '1.5px solid var(--clr-border-md)',
@@ -96,6 +97,7 @@ const S = {
   select: (extra = {}) => ({
     display: 'block',
     width: '100%',
+    minWidth: 0,
     height: '44px',
     padding: '0 12px',
     border: '1.5px solid var(--clr-border-md)',
@@ -308,8 +310,12 @@ export default function HourEntryModal({
 
   // Rejection row handlers
   const addRejectionRow = () => {
+    if (rejectionCodes.length === 0) {
+      alert('No rejection defect reasons found in Plant Master. Please upload rejection reasons in Master Center first.');
+      return;
+    }
     const used = rejectionRows.map(r => r.code);
-    const nextCode = rejectionCodes.find(c => c.isActive && !used.includes(c.code))?.code || rejectionCodes[0]?.code || 'A';
+    const nextCode = rejectionCodes.find(c => c.isActive && !used.includes(c.code))?.code || rejectionCodes[0]?.code || '';
     setRejectionRows(rows => [
       ...rows,
       { id: 'rej-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6), code: nextCode, qty: '' }
@@ -326,6 +332,10 @@ export default function HourEntryModal({
 
   // Downtime row handlers
   const addDowntimeRow = () => {
+    if (downtimeCodes.length === 0) {
+      alert('No downtime reasons found in Plant Master. Please upload downtime reasons in Master Center first.');
+      return;
+    }
     const used = downtimeRows.map(d => d.code);
     const nextCode = downtimeCodes.find(d => d.isActive && !used.includes(d.code))?.code || downtimeCodes[0]?.code || '';
     setDowntimeRows(rows => [
@@ -717,8 +727,8 @@ export default function HourEntryModal({
               }} title={`Downtime: ${totalDowntimeMinutes} min`} />
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', color: 'var(--clr-text3)', fontWeight: 600 }}>
-              <span>🔵 Prod Time: <strong>{validationResult.productionMinutes}m</strong></span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '4px', fontSize: '0.68rem', color: 'var(--clr-text3)', fontWeight: 600 }}>
+              <span>🔵 Prod: <strong>{validationResult.productionMinutes}m</strong></span>
               <span>🟠 Downtime: <strong>{totalDowntimeMinutes}m</strong></span>
               <span>Buffer: <strong>60 ± 5 min</strong></span>
             </div>
@@ -773,9 +783,9 @@ export default function HourEntryModal({
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {rejectionRows.map((row) => (
-                  <div key={row.id} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <div key={row.id} style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                     <select
-                      style={S.select({ flex: 1, height: '40px', fontSize: '0.8rem', padding: '0 8px', borderColor: '#fca5a5' })}
+                      style={S.select({ flex: 1, minWidth: 0, height: '40px', fontSize: '0.8rem', padding: '0 8px', borderColor: '#fca5a5' })}
                       value={row.code}
                       onChange={e => updateRejectionRow(row.id, 'code', e.target.value)}
                     >
@@ -785,16 +795,16 @@ export default function HourEntryModal({
                         </option>
                       ))}
                     </select>
-                    <div style={{ position: 'relative', width: '90px', flexShrink: 0 }}>
+                    <div style={{ position: 'relative', width: '76px', flexShrink: 0 }}>
                       <input
                         type="number"
                         inputMode="numeric"
-                        style={S.input({ height: '40px', paddingRight: '28px', fontSize: '0.9rem', textAlign: 'right', borderColor: '#fca5a5', color: '#dc2626' })}
+                        style={S.input({ height: '40px', paddingRight: '24px', fontSize: '0.9rem', textAlign: 'right', borderColor: '#fca5a5', color: '#dc2626' })}
                         value={row.qty}
                         onChange={e => updateRejectionRow(row.id, 'qty', e.target.value.replace(/\D/g, ''))}
                         placeholder="0"
                       />
-                      <span style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', fontSize: '0.68rem', color: '#dc2626', pointerEvents: 'none', fontWeight: 600 }}>
+                      <span style={{ position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', fontSize: '0.65rem', color: '#dc2626', pointerEvents: 'none', fontWeight: 600 }}>
                         pcs
                       </span>
                     </div>
@@ -854,9 +864,9 @@ export default function HourEntryModal({
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {downtimeRows.map((row) => (
-                  <div key={row.id} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <div key={row.id} style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                     <select
-                      style={S.select({ flex: 1, height: '40px', fontSize: '0.8rem', padding: '0 8px', borderColor: '#fed7aa' })}
+                      style={S.select({ flex: 1, minWidth: 0, height: '40px', fontSize: '0.8rem', padding: '0 8px', borderColor: '#fed7aa' })}
                       value={row.code}
                       onChange={e => updateDowntimeRow(row.id, 'code', e.target.value)}
                     >
@@ -867,11 +877,11 @@ export default function HourEntryModal({
                         </option>
                       ))}
                     </select>
-                    <div style={{ position: 'relative', width: '90px', flexShrink: 0 }}>
+                    <div style={{ position: 'relative', width: '76px', flexShrink: 0 }}>
                       <input
                         type="number"
                         inputMode="numeric"
-                        style={S.input({ height: '40px', paddingRight: '28px', fontSize: '0.9rem', textAlign: 'right', borderColor: '#fed7aa', color: '#ea580c' })}
+                        style={S.input({ height: '40px', paddingRight: '24px', fontSize: '0.9rem', textAlign: 'right', borderColor: '#fed7aa', color: '#ea580c' })}
                         value={row.minutes}
                         onChange={e => {
                           const v = e.target.value.replace(/\D/g, '');
@@ -879,7 +889,7 @@ export default function HourEntryModal({
                         }}
                         placeholder="0"
                       />
-                      <span style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', fontSize: '0.68rem', color: '#ea580c', pointerEvents: 'none', fontWeight: 600 }}>
+                      <span style={{ position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', fontSize: '0.65rem', color: '#ea580c', pointerEvents: 'none', fontWeight: 600 }}>
                         min
                       </span>
                     </div>

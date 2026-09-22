@@ -1581,12 +1581,38 @@ img { display: block; max-width: 100%; }
   .reports-table-container { display: block !important; }
 }
 
-/* Mobile: hide wide tables, show mobile cards */
+/* Mobile: hide wide tables, show mobile cards & ensure proper field layouts */
 @media (max-width: 640px) {
   .grid-table-container { display: none !important; }
   .reports-table-container { display: none !important; }
   .hour-card-list { display: flex !important; }
   .report-card-list { display: flex !important; }
+
+  /* Universal mobile field layout safeguards */
+  .touch-input, .touch-select {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  .form-group {
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+  .modal-card {
+    max-width: 100vw !important;
+    margin: 0 !important;
+    border-radius: 18px 18px 0 0 !important;
+  }
+  .modal-body {
+    padding: 12px 14px !important;
+    overflow-x: hidden !important;
+  }
+  .modal-header {
+    padding: 12px 14px 10px 14px !important;
+  }
+  .modal-footer {
+    padding: 10px 14px !important;
+  }
 }
 
 /* ============================================================

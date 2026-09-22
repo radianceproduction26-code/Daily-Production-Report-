@@ -13,7 +13,7 @@ import {
   Layers,
   ArrowRight
 } from 'lucide-react';
-import { SHIFT_HOURS_DEFINITIONS } from '../data/seedData';
+import { SHIFT_HOURS_DEFINITIONS, getShiftHours } from '../data/seedData';
 import { useI18n } from '../i18n/I18nContext';
 
 export default function ProductionConsole({
@@ -78,7 +78,7 @@ export default function ProductionConsole({
   const isReportApproved = activeReport.status === 'approved';
   const canEdit          = !isReportApproved;
 
-  const allHours = SHIFT_HOURS_DEFINITIONS; // all 12 hours
+  const allHours = getShiftHours(activeReport?.shift); // 12 hours based on Shift A or Shift B
 
   /**
    * Seamlessly resolves the session and entry for any hour in the 12-hour report.
@@ -245,12 +245,13 @@ export default function ProductionConsole({
           </span>
         </div>
 
-        {/* ── Row 2: 4-field info grid ── */}
+        {/* ── Row 2: 4-field info grid (2x2 on mobile, 4-col on tablet/desktop) ── */}
         <div style={{
-          display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr',
-          gap: '0',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+          gap: '8px',
           borderTop: '1px solid var(--clr-border)',
-          padding: '8px 16px 12px 16px'
+          padding: '10px 16px 12px 16px'
         }}>
           {/* Operator */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>

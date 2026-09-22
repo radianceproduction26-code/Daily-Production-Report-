@@ -82,9 +82,9 @@ export default function CounterModal({
             </div>
           ))}
 
-          {/* Counter Inputs Grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-            <div className="form-group">
+          {/* Counter Inputs Grid (Responsive on Mobile) */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '14px' }}>
+            <div className="form-group" style={{ margin: 0 }}>
               <label className="form-label">
                 <span>{t('start_counter')}</span>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Shift / Session Onset</span>
@@ -92,13 +92,14 @@ export default function CounterModal({
               <input
                 type="text"
                 className="touch-input"
+                style={{ minWidth: 0, width: '100%' }}
                 value={startCounter}
                 onChange={(e) => setStartCounter(e.target.value.replace(/\D/g, ''))}
                 placeholder="Start Counter"
               />
             </div>
 
-            <div className="form-group">
+            <div className="form-group" style={{ margin: 0 }}>
               <label className="form-label">
                 <span style={{ color: 'var(--cyan-primary)' }}>{t('machine_end_counter_label')}</span>
                 <span style={{ fontSize: '0.75rem', color: 'var(--cyan-primary)' }}>&gt; {t('start_counter')}</span>
@@ -106,7 +107,7 @@ export default function CounterModal({
               <input
                 type="text"
                 className="touch-input"
-                style={{ borderColor: counterValidation.isValid ? 'var(--cyan-primary)' : 'var(--crimson-defect)' }}
+                style={{ borderColor: counterValidation.isValid ? 'var(--cyan-primary)' : 'var(--crimson-defect)', minWidth: 0, width: '100%' }}
                 value={endCounter}
                 onChange={(e) => setEndCounter(e.target.value.replace(/\D/g, ''))}
                 placeholder="End Counter"
@@ -114,11 +115,11 @@ export default function CounterModal({
             </div>
           </div>
 
-          {/* Shot Calculation & Variance Cards */}
-          <div style={{ background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-medium)', padding: '20px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', textAlign: 'center' }}>
+          {/* Shot Calculation & Variance Cards (2x2 on mobile, 4-col on tablet/desktop) */}
+          <div style={{ background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-medium)', padding: '14px 16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px', textAlign: 'center' }}>
             <div>
               <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{t('total_shots_counted')}</div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                 {counterValidation.totalShots.toLocaleString()}
               </div>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>End - Start Counter</div>
@@ -126,7 +127,7 @@ export default function CounterModal({
 
             <div>
               <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{t('cavity_count')}</div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                 {activeSession.cavityCount}
               </div>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Mould {activeSession.mouldNumber}</div>
@@ -134,7 +135,7 @@ export default function CounterModal({
 
             <div>
               <div style={{ fontSize: '0.72rem', color: 'var(--cyan-primary)', textTransform: 'uppercase' }}>{t('expected_output_label')}</div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.4rem', fontWeight: 800, color: 'var(--cyan-primary)' }}>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.25rem', fontWeight: 800, color: 'var(--cyan-primary)' }}>
                 {counterValidation.expectedProduction.toLocaleString()} pcs
               </div>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Shots × Cavities</div>
@@ -144,7 +145,7 @@ export default function CounterModal({
               <div style={{ fontSize: '0.72rem', color: counterValidation.variancePercent > tolerancePercent ? '#f59e0b' : '#34d399', textTransform: 'uppercase' }}>
                 {t('actual_prod_variance_label')}
               </div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.4rem', fontWeight: 800, color: counterValidation.variancePercent > tolerancePercent ? '#f59e0b' : '#34d399' }}>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.25rem', fontWeight: 800, color: counterValidation.variancePercent > tolerancePercent ? '#f59e0b' : '#34d399' }}>
                 {totalProd.toLocaleString()} pcs
               </div>
               <div style={{ fontSize: '0.7rem', color: counterValidation.variancePercent > tolerancePercent ? '#f59e0b' : '#34d399' }}>

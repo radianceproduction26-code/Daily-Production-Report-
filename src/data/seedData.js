@@ -1,33 +1,9 @@
 // Radiance Polymers - Digital Production Reporting System
 // Initial Master & Seed Data Configuration
 
-export const INITIAL_REJECTION_CODES = [
-  { code: 'A', description: 'Burn Mark', status: 'active', isActive: true },
-  { code: 'B', description: 'Flash', status: 'active', isActive: true },
-  { code: 'C', description: 'Short Shot', status: 'active', isActive: true },
-  { code: 'D', description: 'Black Dot', status: 'active', isActive: true },
-  { code: 'E', description: 'Sink Mark', status: 'active', isActive: true },
-  { code: 'F', description: 'Silver Mark', status: 'active', isActive: true },
-  { code: 'G', description: 'Flow Mark', status: 'active', isActive: true },
-  { code: 'H', description: 'Jetting', status: 'active', isActive: true },
-  { code: 'I', description: 'Warpage', status: 'active', isActive: true },
-  { code: 'J', description: 'Dent Mark', status: 'active', isActive: true },
-  { code: 'K', description: 'Weld Line', status: 'active', isActive: true },
-  { code: 'L', description: 'Oil Mark', status: 'active', isActive: true },
-  { code: 'M', description: 'Color Variation', status: 'active', isActive: true },
-  { code: 'N', description: 'Other Defect', status: 'active', isActive: true }
-];
+export const INITIAL_REJECTION_CODES = [];
 
-export const INITIAL_DOWNTIME_CODES = [
-  { code: 'DT-001', category: 'Machine Related', description: 'Machine Breakdown', status: 'active', isActive: true },
-  { code: 'DT-002', category: 'Mould Related', description: 'Mould Cleaning', status: 'active', isActive: true },
-  { code: 'DT-003', category: 'Material Related', description: 'Material Not Available', status: 'active', isActive: true },
-  { code: 'DT-004', category: 'Utility Related', description: 'Power Failure', status: 'active', isActive: true },
-  { code: 'DT-005', category: 'Mould Related', description: 'Tool Change', status: 'active', isActive: true },
-  { code: 'DT-006', category: 'Manpower Related', description: 'Operator Not Available', status: 'active', isActive: true },
-  { code: 'DT-007', category: 'Process Related', description: 'Quality Approval Wait', status: 'active', isActive: true },
-  { code: 'DT-999', category: 'Others', description: 'Other Downtime', status: 'active', isActive: true }
-];
+export const INITIAL_DOWNTIME_CODES = [];
 
 export const INITIAL_OPERATORS = [
   { id: 'op-01', operatorName: 'Shreyank', employeeCode: 'EMP-101', status: 'active' },
@@ -131,7 +107,7 @@ export const USERS = [
   { id: 'sup-akshay', fullName: 'Mr. Akshay', email: 'akshay@radiancepolymers.com', role: 'supervisor', badgeId: 'SUP-02' },
 ];
 
-export const SHIFT_HOURS_DEFINITIONS = [
+export const SHIFT_A_HOURS_DEFINITIONS = [
   { index: 1, label: '08:00 - 09:00', startHour: 8 },
   { index: 2, label: '09:00 - 10:00', startHour: 9 },
   { index: 3, label: '10:00 - 11:00', startHour: 10 },
@@ -145,6 +121,30 @@ export const SHIFT_HOURS_DEFINITIONS = [
   { index: 11, label: '18:00 - 19:00', startHour: 18 },
   { index: 12, label: '19:00 - 20:00', startHour: 19 },
 ];
+
+export const SHIFT_B_HOURS_DEFINITIONS = [
+  { index: 1, label: '20:00 - 21:00', startHour: 20 },
+  { index: 2, label: '21:00 - 22:00', startHour: 21 },
+  { index: 3, label: '22:00 - 23:00', startHour: 22 },
+  { index: 4, label: '23:00 - 00:00', startHour: 23 },
+  { index: 5, label: '00:00 - 01:00', startHour: 0 },
+  { index: 6, label: '01:00 - 02:00', startHour: 1 },
+  { index: 7, label: '02:00 - 03:00', startHour: 2 },
+  { index: 8, label: '03:00 - 04:00', startHour: 3 },
+  { index: 9, label: '04:00 - 05:00', startHour: 4 },
+  { index: 10, label: '05:00 - 06:00', startHour: 5 },
+  { index: 11, label: '06:00 - 07:00', startHour: 6 },
+  { index: 12, label: '07:00 - 08:00', startHour: 7 },
+];
+
+export const SHIFT_HOURS_DEFINITIONS = SHIFT_A_HOURS_DEFINITIONS;
+
+export function getShiftHours(shift = 'Shift A') {
+  if (shift === 'Shift B' || shift === 'B' || shift === 'Shift 2') {
+    return SHIFT_B_HOURS_DEFINITIONS;
+  }
+  return SHIFT_A_HOURS_DEFINITIONS;
+}
 
 export const DEFAULT_SYSTEM_SETTINGS = {
   shotCounterTolerancePercent: 3.0,

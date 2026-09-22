@@ -19,7 +19,8 @@ import {
   Lock,
   Edit3,
   Cloud,
-  RefreshCw
+  RefreshCw,
+  Trash2
 } from 'lucide-react';
 import {
   downloadUnifiedPartMasterTemplate,
@@ -40,7 +41,9 @@ import {
   saveOperators,
   getSupervisors,
   generateNextDowntimeCode,
-  generateNextRejectionCode
+  generateNextRejectionCode,
+  clearAllRejectionCodes,
+  clearAllDowntimeCodes
 } from '../services/storageService';
 import {
   pushMasterDataToCloud,
@@ -317,6 +320,30 @@ export default function PartMasterView({
     setRejections(updated);
     setNewRejDesc('');
     setShowAddRejection(false);
+  };
+
+  // Clear All Rejections
+  const handleClearAllRejections = () => {
+    if (window.confirm('Are you sure you want to remove ALL rejection defect reasons? You will be able to upload your new Excel sheet cleanly.')) {
+      clearAllRejectionCodes();
+      setRejections([]);
+      setUploadResult({
+        success: true,
+        message: 'All rejection defect reasons have been cleared. You can now upload your new Excel file.'
+      });
+    }
+  };
+
+  // Clear All Downtimes
+  const handleClearAllDowntimes = () => {
+    if (window.confirm('Are you sure you want to remove ALL downtime reasons? You will be able to upload your new Excel sheet cleanly.')) {
+      clearAllDowntimeCodes();
+      setDowntimes([]);
+      setUploadResult({
+        success: true,
+        message: 'All downtime reasons have been cleared. You can now upload your new Excel file.'
+      });
+    }
   };
 
   // Add Dynamic Downtime
@@ -739,6 +766,17 @@ export default function PartMasterView({
                 <Plus size={18} />
                 <span>Add Defect Code</span>
               </button>
+
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={handleClearAllRejections}
+                style={{ width: '100%', justifyContent: 'center', borderColor: 'var(--clr-error)', color: 'var(--clr-error)' }}
+                title="Remove all rejection defect reasons to upload new list"
+              >
+                <Trash2 size={18} />
+                <span>Clear All Rejections</span>
+              </button>
             </div>
           </div>
 
@@ -771,8 +809,27 @@ export default function PartMasterView({
           )}
 
           {/* Rejection Codes List */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {rejections.map(r => (
+          {rejections.length === 0 ? (
+            <div className="card" style={{ padding: '24px', textAlign: 'center', background: 'var(--bg-surface2)', border: '1.5px dashed var(--clr-border)' }}>
+              <AlertOctagon size={32} color="var(--clr-text4)" style={{ margin: '0 auto 8px auto' }} />
+              <div style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--clr-text)' }}>
+                No Rejection Reasons Loaded
+              </div>
+              <p style={{ fontSize: '0.8rem', color: 'var(--clr-text3)', maxWidth: '420px', margin: '4px auto 14px auto' }}>
+                All pre-existing rejection reasons have been cleared. Click "Download Template" to view format, and upload your new rejection reasons Excel sheet.
+              </p>
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                <button type="button" className="btn btn-sm btn-primary" onClick={handleDownloadRejectionTemplate}>
+                  <Download size={14} /> Download Template
+                </button>
+                <button type="button" className="btn btn-sm btn-outline" onClick={() => setShowAddRejection(true)}>
+                  <Plus size={14} /> Add First Defect
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {rejections.map(r => (
               <div
                 key={r.code}
                 className="card"
@@ -808,7 +865,8 @@ export default function PartMasterView({
                 <span className="badge badge-success">ACTIVE</span>
               </div>
             ))}
-          </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -848,6 +906,17 @@ export default function PartMasterView({
               >
                 <Plus size={18} />
                 <span>Add Downtime Code</span>
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={handleClearAllDowntimes}
+                style={{ width: '100%', justifyContent: 'center', borderColor: 'var(--clr-error)', color: 'var(--clr-error)' }}
+                title="Remove all downtime reasons to upload new list"
+              >
+                <Trash2 size={18} />
+                <span>Clear All Downtimes</span>
               </button>
             </div>
           </div>
@@ -897,8 +966,27 @@ export default function PartMasterView({
           )}
 
           {/* Downtime Codes List */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {downtimes.map(dt => (
+          {downtimes.length === 0 ? (
+            <div className="card" style={{ padding: '24px', textAlign: 'center', background: 'var(--bg-surface2)', border: '1.5px dashed var(--clr-border)' }}>
+              <Clock size={32} color="var(--clr-text4)" style={{ margin: '0 auto 8px auto' }} />
+              <div style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--clr-text)' }}>
+                No Downtime Reasons Loaded
+              </div>
+              <p style={{ fontSize: '0.8rem', color: 'var(--clr-text3)', maxWidth: '420px', margin: '4px auto 14px auto' }}>
+                All pre-existing downtime reasons have been cleared. Click "Download Template" to view format, and upload your new downtime reasons Excel sheet.
+              </p>
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                <button type="button" className="btn btn-sm btn-primary" onClick={handleDownloadDowntimeTemplate}>
+                  <Download size={14} /> Download Template
+                </button>
+                <button type="button" className="btn btn-sm btn-outline" onClick={() => setShowAddDowntime(true)}>
+                  <Plus size={14} /> Add First Downtime
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {downtimes.map(dt => (
               <div
                 key={dt.code}
                 className="card"
@@ -937,7 +1025,8 @@ export default function PartMasterView({
                 <span className="badge badge-success">ACTIVE</span>
               </div>
             ))}
-          </div>
+            </div>
+          )}
         </div>
       )}
 

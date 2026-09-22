@@ -41,7 +41,7 @@ export default function ShiftSetupModal({
   const selectedMachine = pilotMachine;
 
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [shift, setShift] = useState('Shift 1');
+  const [shift, setShift] = useState('Shift A');
   const [supervisorName, setSupervisorName] = useState(
     currentUser?.fullName?.includes('Akshay') ? 'Mr. Akshay' : 'Mr. Lokesh'
   );
@@ -71,22 +71,26 @@ export default function ShiftSetupModal({
   const effectivePartId = partId || effectivePartsList[0]?.id || '';
   const selectedPart = effectivePartsList.find(p => p.id === effectivePartId) || effectivePartsList[0];
 
-  // Editable Cycle Time state initialized from selected part
-  const [cycleTime, setCycleTime] = useState(
-    selectedPart?.standardCycleTimeSeconds ? String(selectedPart.standardCycleTimeSeconds) : '20'
+  // Standard Cycle Time (Locked) from Part Master
+  const standardCycleTime = Number(selectedPart?.standardCycleTimeSeconds) || 20;
+
+  // Actual Cycle Time (Editable by Operator)
+  const [actualCycleTime, setActualCycleTime] = useState(
+    selectedPart?.actualCycleTimeSeconds ? String(selectedPart.actualCycleTimeSeconds) : String(standardCycleTime)
   );
 
   React.useEffect(() => {
-    if (selectedPart?.standardCycleTimeSeconds) {
-      setCycleTime(String(selectedPart.standardCycleTimeSeconds));
+    if (selectedPart) {
+      const std = selectedPart.standardCycleTimeSeconds || 20;
+      setActualCycleTime(String(selectedPart.actualCycleTimeSeconds || std));
     }
   }, [selectedPart?.id]);
 
-  const activeCycleTime = parseFloat(cycleTime) > 0
-    ? parseFloat(cycleTime)
-    : (selectedPart?.standardCycleTimeSeconds || 20);
+  const activeCycleTime = parseFloat(actualCycleTime) > 0
+    ? parseFloat(actualCycleTime)
+    : standardCycleTime;
 
-  // Theoretical Hourly Target: (3600 / Cycle Time) * Cavities
+  // Theoretical Hourly Target calculated from Actual running cycle time: (3600 / Cycle Time) * Cavities
   const targetPerHour = selectedPart && activeCycleTime > 0
     ? calculateTheoreticalHourlyTarget(activeCycleTime, selectedPart.cavityCount)
     : 0;
@@ -123,13 +127,15 @@ export default function ShiftSetupModal({
       supervisorId: supervisorName.includes('Akshay') ? 'u-sup-02' : 'u-sup-01',
       part: {
         ...selectedPart,
-        standardCycleTimeSeconds: activeCycleTime
+        standardCycleTimeSeconds: standardCycleTime,
+        actualCycleTimeSeconds: activeCycleTime
       },
       mould: {
         id: selectedPart.id,
         mouldNumber: selectedPart.partNumber || selectedPart.partCode,
         mouldName: selectedPart.partName,
-        standardCycleTimeSeconds: activeCycleTime,
+        standardCycleTimeSeconds: standardCycleTime,
+        actualCycleTimeSeconds: activeCycleTime,
         cavityCount: selectedPart.cavityCount
       },
       startCounter: Number(startCounter) || 0
@@ -152,41 +158,42 @@ export default function ShiftSetupModal({
         </div>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-          <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             
             {/* Row 1: Date, Shift, Machine, Supervisor (2x2 grid on mobile) */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
-              <div className="form-group">
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
+              <div className="form-group" style={{ margin: 0 }}>
                 <label className="form-label">Date</label>
                 <input
                   type="date"
                   className="touch-input"
+                  style={{ minWidth: 0, width: '100%' }}
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
                   required
                 />
               </div>
 
-              <div className="form-group">
+              <div className="form-group" style={{ margin: 0 }}>
                 <label className="form-label">{t('active_shift')}</label>
                 <select
                   className="touch-select"
+                  style={{ minWidth: 0, width: '100%', fontWeight: 700 }}
                   value={shift}
                   onChange={(e) => setShift(e.target.value)}
                 >
-                  <option value="Shift 1">Shift 1 (08:00 - 20:00)</option>
-                  <option value="Shift 2">Shift 2 (20:00 - 08:00)</option>
-                  <option value="Shift 3">Shift 3 (General / Special)</option>
+                  <option value="Shift A">Shift A (08:00 - 20:00)</option>
+                  <option value="Shift B">Shift B (20:00 - 08:00)</option>
                 </select>
               </div>
 
-              <div className="form-group">
+              <div className="form-group" style={{ margin: 0 }}>
                 <label className="form-label" style={{ color: 'var(--clr-primary)' }}>
                   <Lock size={11} style={{ display: 'inline', marginRight: '3px' }} />
-                  Machine (Locked)
+                  Machine
                 </label>
                 <div style={{
-                  padding: '8px 12px',
+                  padding: '8px 10px',
                   background: 'var(--clr-primary-lt)',
                   border: '1px solid #7dd3fc',
                   borderRadius: 'var(--r-md)',
@@ -197,22 +204,24 @@ export default function ShiftSetupModal({
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   height: '46px',
-                  boxSizing: 'border-box'
+                  boxSizing: 'border-box',
+                  minWidth: 0
                 }}>
-                  <span>MC03 (Milacron 450T)</span>
-                  <span className="badge badge-primary" style={{ fontSize: '0.62rem' }}>
+                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 800 }}>MC03 (450T)</span>
+                  <span className="badge badge-primary" style={{ fontSize: '0.58rem', padding: '2px 5px', flexShrink: 0 }}>
                     LOCKED
                   </span>
                 </div>
               </div>
 
-              <div className="form-group">
+              <div className="form-group" style={{ margin: 0 }}>
                 <label className="form-label">
                   <UserCheck size={11} style={{ display: 'inline', marginRight: '3px' }} />
                   Supervisor *
                 </label>
                 <select
                   className="touch-select"
+                  style={{ minWidth: 0, width: '100%' }}
                   value={supervisorName}
                   onChange={(e) => setSupervisorName(e.target.value)}
                   required
@@ -224,13 +233,13 @@ export default function ShiftSetupModal({
             </div>
 
             {/* Row 2: Part Selection */}
-            <div className="form-group">
+            <div className="form-group" style={{ margin: 0 }}>
               <label className="form-label" style={{ fontWeight: 700, color: 'var(--clr-primary)' }}>
                 <span>Part Number / Tool Identifier *</span>
               </label>
               <select
                 className="touch-select"
-                style={{ fontSize: '0.95rem', fontWeight: 700, height: '48px' }}
+                style={{ fontSize: '0.88rem', fontWeight: 700, height: '46px', minWidth: 0, width: '100%' }}
                 value={effectivePartId}
                 onChange={(e) => setPartId(e.target.value)}
               >
@@ -242,80 +251,135 @@ export default function ShiftSetupModal({
               </select>
             </div>
 
-            {/* Auto-Fetched Technical Specifications Card */}
+            {/* Auto-Fetched Technical Specifications Card with Dual Cycle Time */}
             {selectedPart && (
-              <div style={{ background: 'var(--bg-surface2)', border: '1px solid var(--clr-border)', borderRadius: 'var(--r-md)', padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ background: 'var(--bg-surface2)', border: '1px solid var(--clr-border)', borderRadius: 'var(--r-md)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--clr-border)', paddingBottom: '6px' }}>
                   <span style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--clr-primary)' }}>
                     Specs ({selectedPart.partNumber})
                   </span>
                   <div style={{ display: 'flex', gap: '6px' }}>
-                    <span className="badge badge-gray">{selectedPart.rawMaterialGrade || 'PPCP'}</span>
-                    <span className="badge badge-primary">{selectedPart.customer}</span>
+                    <span className="badge badge-gray" style={{ fontSize: '0.65rem' }}>{selectedPart.rawMaterialGrade || 'PPCP'}</span>
+                    <span className="badge badge-primary" style={{ fontSize: '0.65rem' }}>{selectedPart.customer}</span>
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(75px, 1fr))', gap: '8px', textAlign: 'center' }}>
+                {/* 3x2 Grid for Mobile-Optimized Specs */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', textAlign: 'center' }}>
+                  {/* Row 1: Physical Specs */}
                   <div style={{ background: '#fff', padding: '6px 4px', borderRadius: 'var(--r-sm)', border: '1px solid var(--clr-border)' }}>
-                    <div style={{ fontSize: '0.65rem', color: 'var(--clr-text3)' }}>Part Wt</div>
-                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.92rem', fontWeight: 700 }}>
+                    <div style={{ fontSize: '0.62rem', color: 'var(--clr-text3)', fontWeight: 700 }}>Part Wt</div>
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.88rem', fontWeight: 800 }}>
                       {selectedPart.partWeightGrams}g
                     </div>
                   </div>
 
                   <div style={{ background: '#fff', padding: '6px 4px', borderRadius: 'var(--r-sm)', border: '1px solid var(--clr-border)' }}>
-                    <div style={{ fontSize: '0.65rem', color: 'var(--clr-text3)' }}>Runner Wt</div>
-                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.92rem', fontWeight: 700 }}>
+                    <div style={{ fontSize: '0.62rem', color: 'var(--clr-text3)', fontWeight: 700 }}>Runner Wt</div>
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.88rem', fontWeight: 800 }}>
                       {selectedPart.runnerWeightGrams}g
                     </div>
                   </div>
 
-                  <div style={{ background: '#fff', padding: '4px 6px', borderRadius: 'var(--r-sm)', border: '1.5px solid var(--clr-primary)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                    <div style={{ fontSize: '0.62rem', color: 'var(--clr-primary)', fontWeight: 800 }}>Cycle Time (s) ✏️</div>
+                  <div style={{ background: '#fff', padding: '6px 4px', borderRadius: 'var(--r-sm)', border: '1px solid var(--clr-border)' }}>
+                    <div style={{ fontSize: '0.62rem', color: 'var(--clr-text3)', fontWeight: 700 }}>Cavities</div>
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.88rem', fontWeight: 800, color: 'var(--clr-text)' }}>
+                      {selectedPart.cavityCount} Cav
+                    </div>
+                  </div>
+
+                  {/* Row 2: Dual Cycle Times & Target */}
+                  {/* 1. Standard Cycle Time (LOCKED) */}
+                  <div style={{
+                    background: '#f1f5f9',
+                    padding: '4px 4px',
+                    borderRadius: 'var(--r-sm)',
+                    border: '1.5px solid #cbd5e1',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <div style={{ fontSize: '0.58rem', color: 'var(--clr-text3)', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '2px' }}>
+                      <Lock size={9} /> Std Cycle
+                    </div>
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.92rem', fontWeight: 900, color: 'var(--clr-text2)' }}>
+                      {standardCycleTime}s
+                    </div>
+                    <span className="badge badge-gray" style={{ fontSize: '0.52rem', padding: '0px 3px', lineHeight: 1.2 }}>
+                      LOCKED
+                    </span>
+                  </div>
+
+                  {/* 2. Actual Cycle Time (EDITABLE) */}
+                  <div style={{
+                    background: '#fff',
+                    padding: '4px 4px',
+                    borderRadius: 'var(--r-sm)',
+                    border: '1.5px solid var(--clr-primary)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <div style={{ fontSize: '0.58rem', color: 'var(--clr-primary)', fontWeight: 800 }}>
+                      Act Cycle ✏️
+                    </div>
                     <input
                       type="number"
                       step="0.1"
                       min="1"
                       max="999"
-                      value={cycleTime}
-                      onChange={(e) => setCycleTime(e.target.value)}
+                      value={actualCycleTime}
+                      onChange={(e) => setActualCycleTime(e.target.value)}
                       style={{
                         width: '100%',
                         textAlign: 'center',
                         border: 'none',
                         background: 'transparent',
                         fontFamily: 'var(--font-mono)',
-                        fontSize: '0.92rem',
-                        fontWeight: 800,
-                        color: 'var(--clr-warning)',
+                        fontSize: '0.95rem',
+                        fontWeight: 900,
+                        color: 'var(--clr-primary)',
                         outline: 'none',
                         padding: '1px 0'
                       }}
-                      title="Editable cycle time in seconds"
+                      title="Actual running cycle time in seconds"
                       required
                     />
+                    <span style={{ fontSize: '0.52rem', color: 'var(--clr-primary)', fontWeight: 700, lineHeight: 1.2 }}>
+                      EDITABLE
+                    </span>
                   </div>
 
-                  <div style={{ background: '#fff', padding: '6px 4px', borderRadius: 'var(--r-sm)', border: '1px solid var(--clr-border)' }}>
-                    <div style={{ fontSize: '0.65rem', color: 'var(--clr-text3)' }}>Cavities</div>
-                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.92rem', fontWeight: 700, color: 'var(--clr-primary)' }}>
-                      {selectedPart.cavityCount} Cav
+                  {/* 3. Target Per Hour */}
+                  <div style={{
+                    background: 'var(--clr-primary-lt)',
+                    padding: '4px 4px',
+                    borderRadius: 'var(--r-sm)',
+                    border: '1px solid #7dd3fc',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <div style={{ fontSize: '0.58rem', color: 'var(--clr-primary)', fontWeight: 800 }}>
+                      Target/Hr
                     </div>
-                  </div>
-
-                  <div style={{ background: 'var(--clr-primary-lt)', padding: '6px 4px', borderRadius: 'var(--r-sm)', border: '1px solid #7dd3fc' }}>
-                    <div style={{ fontSize: '0.65rem', color: 'var(--clr-primary)', fontWeight: 700 }}>Target/Hr</div>
-                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1rem', fontWeight: 800, color: 'var(--clr-primary)' }}>
-                      {targetPerHour} pcs
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.95rem', fontWeight: 900, color: 'var(--clr-primary)' }}>
+                      {targetPerHour}
                     </div>
+                    <span style={{ fontSize: '0.52rem', color: 'var(--clr-primary)', fontWeight: 700, lineHeight: 1.2 }}>
+                      pcs/hr
+                    </span>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Row 3: Operator & Start Counter */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
-              <div className="form-group">
+            {/* Row 3: Operator & Start Counter (2-col on mobile) */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
+              <div className="form-group" style={{ margin: 0 }}>
                 <label className="form-label" style={{ fontWeight: 700, color: 'var(--clr-primary)' }}>
                   <UserCheck size={11} style={{ display: 'inline', marginRight: '3px' }} />
                   <span>Operator Name *</span>
@@ -325,9 +389,11 @@ export default function ShiftSetupModal({
                   style={{
                     borderColor: 'var(--clr-primary)',
                     fontWeight: 700,
-                    fontSize: '0.9rem',
+                    fontSize: '0.85rem',
                     height: '46px',
-                    background: 'var(--bg-surface)'
+                    background: 'var(--bg-surface)',
+                    minWidth: 0,
+                    width: '100%'
                   }}
                   value={operatorName}
                   onChange={(e) => setOperatorName(e.target.value)}
@@ -341,12 +407,13 @@ export default function ShiftSetupModal({
                 </select>
               </div>
 
-              <div className="form-group">
+              <div className="form-group" style={{ margin: 0 }}>
                 <label className="form-label">{t('start_counter')} *</label>
                 <input
                   type="text"
                   inputMode="numeric"
                   className="touch-input"
+                  style={{ minWidth: 0, width: '100%', height: '46px', fontSize: '0.95rem', fontWeight: 700 }}
                   value={startCounter}
                   onChange={(e) => setStartCounter(e.target.value.replace(/\D/g, ''))}
                   placeholder="e.g. 154200"
@@ -357,47 +424,49 @@ export default function ShiftSetupModal({
 
             {/* STEP 3: Production Data Verification Card */}
             <div style={{
-              padding: '12px',
+              padding: '10px 12px',
               borderRadius: 'var(--r-md)',
               border: `1px solid ${verification.isReady ? 'var(--clr-success)' : 'var(--clr-error)'}`,
               background: verification.isReady ? 'var(--clr-success-lt)' : 'var(--clr-error-lt)',
               display: 'flex',
               flexDirection: 'column',
-              gap: '8px'
+              gap: '6px'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   {verification.isReady ? (
-                    <CheckCircle2 size={18} color="var(--clr-success)" />
+                    <CheckCircle2 size={16} color="var(--clr-success)" />
                   ) : (
-                    <AlertTriangle size={18} color="var(--clr-error)" />
+                    <AlertTriangle size={16} color="var(--clr-error)" />
                   )}
                   <span style={{
                     fontWeight: 800,
-                    fontSize: '0.85rem',
+                    fontSize: '0.82rem',
                     color: verification.isReady ? 'var(--clr-success-dark)' : 'var(--clr-error-dark)'
                   }}>
                     {verification.statusText}
                   </span>
                 </div>
-                <span className={`badge ${verification.isReady ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.68rem' }}>
+                <span className={`badge ${verification.isReady ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.62rem' }}>
                   {verification.isReady ? 'PASSED' : 'BLOCKED'}
                 </span>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(70px, 1fr))', gap: '4px' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                 {verification.verifiedFields.map((f, idx) => (
                   <div
                     key={idx}
                     style={{
-                      fontSize: '0.68rem',
-                      padding: '3px 4px',
+                      fontSize: '0.64rem',
+                      padding: '3px 6px',
                       borderRadius: 'var(--r-sm)',
                       background: f.passed ? 'rgba(5, 150, 105, 0.15)' : 'rgba(220, 38, 38, 0.15)',
                       border: `1px solid ${f.passed ? 'var(--clr-success)' : 'var(--clr-error)'}`,
                       color: f.passed ? 'var(--clr-success-dark)' : 'var(--clr-error-dark)',
                       fontWeight: 700,
                       textAlign: 'center',
+                      flex: '1 1 calc(33.333% - 4px)',
+                      minWidth: '85px',
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis'

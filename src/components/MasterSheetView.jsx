@@ -75,8 +75,11 @@ export default function MasterSheetView({
       // Date
       const dateMatch = !filterDate || r.reportDate === filterDate;
 
-      // Shift
-      const shiftMatch = filterShift === 'ALL' || r.shift === filterShift;
+      // Shift (Shift A & Shift B)
+      const shiftMatch = filterShift === 'ALL' ||
+        r.shift === filterShift ||
+        (filterShift === 'Shift A' && (r.shift === 'Shift 1' || r.shift === 'A')) ||
+        (filterShift === 'Shift B' && (r.shift === 'Shift 2' || r.shift === 'B'));
 
       // Machine
       const machineMatch = filterMachine === 'ALL' || r.machineNumber === filterMachine;
@@ -384,9 +387,8 @@ export default function MasterSheetView({
             }}
           >
             <option value="ALL">All Shifts</option>
-            <option value="Shift 1">Shift 1 (Day)</option>
-            <option value="Shift 2">Shift 2 (Evening)</option>
-            <option value="Shift 3">Shift 3 (Night)</option>
+            <option value="Shift A">Shift A (08:00 - 20:00)</option>
+            <option value="Shift B">Shift B (20:00 - 08:00)</option>
           </select>
 
           {/* Machine Filter */}
