@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Radiance Production Reporting</string>
+    <string name="title_activity_main">Radiance Production Reporting</string>
+    <string name="package_name">com.radiancepolymers.productionreport</string>
+    <string name="custom_url_scheme">com.radiancepolymers.productionreport</string>
+</resources>

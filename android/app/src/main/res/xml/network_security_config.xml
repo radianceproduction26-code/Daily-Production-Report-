@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Network Security Config for Radiance Polymers Production Report v1.0.0      -->
+<!-- Allows cleartext HTTP traffic to LAN addresses (192.168.x.x, 10.x.x.x)     -->
+<!-- for shop-floor deployment where HTTPS is not available on internal network.  -->
+<network-security-config>
+    <!-- Allow HTTP to local network ranges (shop floor LAN) -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+        <domain includeSubdomains="true">192.168.0.0</domain>
+        <domain includeSubdomains="true">192.168.1.0</domain>
+        <domain includeSubdomains="true">192.168.10.0</domain>
+        <domain includeSubdomains="true">10.0.0.0</domain>
+        <domain includeSubdomains="true">10.10.0.0</domain>
+    </domain-config>
+    <!-- All other traffic uses system default (HTTPS enforced) -->
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

@@ -1,0 +1,25 @@
+{
+  "appId": "com.radiancepolymers.productionreport",
+  "appName": "Radiance Production Reporting",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "minSdkVersion": 29,
+    "targetSdkVersion": 34,
+    "buildToolsVersion": "34.0.0",
+    "allowMixedContent": true,
+    "webContentsDebuggingEnabled": false,
+    "backgroundColor": "#ffffff"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "launchAutoHide": true,
+      "backgroundColor": "#ffffff",
+      "androidSplashResourceName": "splash",
+      "showSpinner": false
+    }
+  }
+}
