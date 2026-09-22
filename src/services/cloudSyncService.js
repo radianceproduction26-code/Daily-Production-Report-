@@ -12,7 +12,10 @@ import {
   getRejectionCodes,
   saveRejectionCodes,
   getDowntimeCodes,
-  saveDowntimeCodes
+  saveDowntimeCodes,
+  getDeletedReportIds,
+  recordDeletedReportId,
+  isReportDeleted
 } from './storageService.js';
 
 const WEBHOOK_STORAGE_KEY = 'rp_mastersheet_webhook_url_v1';
@@ -202,12 +205,15 @@ export async function pushShiftReportToCloud(report) {
 
 /**
  * Fetches all shift reports from Supabase Cloud Database
- * Merges them with local reports cache
+ * Merges them with local reports cache (guarantees deleted reports are never resurrected)
  */
 export async function fetchShiftReportsFromCloud() {
   const client = getSupabaseClient();
+  const deletedIds = new Set(getDeletedReportIds());
+
   if (!client) {
-    return { success: false, reports: getShiftReports(), source: 'local' };
+    const local = getShiftReports().filter(r => !deletedIds.has(r.id));
+    return { success: false, reports: local, source: 'local' };
   }
 
   try {
@@ -218,68 +224,90 @@ export async function fetchShiftReportsFromCloud() {
 
     if (error) {
       console.warn('Failed to fetch shift reports from cloud:', error.message);
-      return { success: false, error: error.message, reports: getShiftReports(), source: 'local' };
+      const local = getShiftReports().filter(r => !deletedIds.has(r.id));
+      return { success: false, error: error.message, reports: local, source: 'local' };
     }
 
     if (data && Array.isArray(data)) {
-      // Reconstruct full reports (filter out master data sync payload)
-      const cloudReports = data
-        .filter(row => row.id !== 'RP_PLANT_MASTER_DATA' && row.shift !== 'MASTER_DATA')
-        .map(row => {
-          if (row.full_data && typeof row.full_data === 'object') {
-          return {
+      const cloudReports = [];
+      const lingeringDeletedCloudIds = [];
+
+      data.forEach(row => {
+        // Filter out master data sync row
+        if (row.id === 'RP_PLANT_MASTER_DATA' || row.shift === 'MASTER_DATA') return;
+
+        // If this report has been deleted locally, do NOT resurrect it! Purge it from cloud.
+        if (deletedIds.has(row.id)) {
+          lingeringDeletedCloudIds.push(row.id);
+          return;
+        }
+
+        if (row.full_data && typeof row.full_data === 'object') {
+          cloudReports.push({
             ...row.full_data,
             id: row.id,
             status: row.status,
             submittedAt: row.submitted_at,
             approvedAt: row.approved_at,
             updatedAt: row.updated_at
-          };
+          });
+        } else {
+          cloudReports.push({
+            id: row.id,
+            reportDate: row.report_date,
+            shift: row.shift,
+            machineNumber: row.machine_number,
+            machineName: row.machine_name,
+            operatorName: row.operator_name,
+            supervisorName: row.supervisor_name,
+            status: row.status,
+            submittedAt: row.submitted_at,
+            approvedAt: row.approved_at,
+            mouldSessions: []
+          });
         }
-        return {
-          id: row.id,
-          reportDate: row.report_date,
-          shift: row.shift,
-          machineNumber: row.machine_number,
-          machineName: row.machine_name,
-          operatorName: row.operator_name,
-          supervisorName: row.supervisor_name,
-          status: row.status,
-          submittedAt: row.submitted_at,
-          approvedAt: row.approved_at,
-          mouldSessions: []
-        };
       });
 
-      // Merge with local storage (cloud takes precedence for same IDs if newer)
-      const localReports = getShiftReports();
+      // Purge lingering deleted reports from Supabase cloud asynchronously
+      if (lingeringDeletedCloudIds.length > 0) {
+        lingeringDeletedCloudIds.forEach(delId => {
+          client.from('shift_reports_sync').delete().eq('id', delId).then(() => {}).catch(() => {});
+        });
+      }
+
+      // Merge with local storage (cloud takes precedence for same IDs if newer, excluding deleted)
+      const localReports = getShiftReports().filter(r => !deletedIds.has(r.id));
       const mergedMap = new Map();
 
       // Put local first
       localReports.forEach(r => mergedMap.set(r.id, r));
-      // Overwrite/insert with cloud
+      // Overwrite/insert with cloud (only non-deleted)
       cloudReports.forEach(r => mergedMap.set(r.id, r));
 
-      const mergedList = Array.from(mergedMap.values()).sort((a, b) => {
-        return new Date(b.reportDate || 0) - new Date(a.reportDate || 0);
-      });
+      const mergedList = Array.from(mergedMap.values())
+        .filter(r => !deletedIds.has(r.id))
+        .sort((a, b) => {
+          return new Date(b.reportDate || 0) - new Date(a.reportDate || 0);
+        });
 
       saveShiftReports(mergedList);
       return { success: true, reports: mergedList, source: 'cloud', count: cloudReports.length };
     }
 
-    return { success: true, reports: getShiftReports(), source: 'local' };
+    const local = getShiftReports().filter(r => !deletedIds.has(r.id));
+    return { success: true, reports: local, source: 'local' };
   } catch (err) {
     console.warn('Error reading from cloud database:', err.message);
-    return { success: false, error: err.message, reports: getShiftReports(), source: 'local' };
+    const local = getShiftReports().filter(r => !deletedIds.has(r.id));
+    return { success: false, error: err.message, reports: local, source: 'local' };
   }
 }
 
 /**
  * Subscribes to Real-Time Postgres changes on `shift_reports_sync`
- * When any mobile device inserts/updates a report, this callback fires instantly on laptop!
+ * When any mobile device inserts/updates/deletes a report, this callback fires instantly on laptop!
  */
-export function subscribeToShiftReports(onShiftUpdate, onMasterUpdate) {
+export function subscribeToShiftReports(onShiftUpdate, onMasterUpdate, onShiftDelete) {
   const client = getSupabaseClient();
   if (!client || typeof client.channel !== 'function') {
     return () => {};
@@ -299,10 +327,32 @@ export function subscribeToShiftReports(onShiftUpdate, onMasterUpdate) {
             if (typeof onMasterUpdate === 'function') {
               onMasterUpdate(payload.new?.full_data);
             }
-          } else {
-            if (typeof onShiftUpdate === 'function') {
-              onShiftUpdate(payload);
+            return;
+          }
+
+          // Handle Realtime DELETE event
+          if (payload.eventType === 'DELETE' || (!payload.new && payload.old?.id)) {
+            const delId = payload.old?.id;
+            if (delId) {
+              console.log('📡 Realtime Cloud Shift Report DELETE received:', delId);
+              recordDeletedReportId(delId);
+              const currentReports = getShiftReports().filter(r => r.id !== delId);
+              saveShiftReports(currentReports);
+              if (typeof onShiftDelete === 'function') {
+                onShiftDelete(delId);
+              }
             }
+            return;
+          }
+
+          // If incoming record has been marked deleted on this device, reject it
+          if (payload.new?.id && isReportDeleted(payload.new.id)) {
+            console.log('📡 Ignoring incoming report already deleted locally:', payload.new.id);
+            return;
+          }
+
+          if (typeof onShiftUpdate === 'function') {
+            onShiftUpdate(payload);
           }
         }
       )
@@ -324,6 +374,9 @@ export function subscribeToShiftReports(onShiftUpdate, onMasterUpdate) {
  */
 export async function deleteShiftReportFromCloud(reportId) {
   if (!reportId) return { success: false };
+  // Immediately register tombstone
+  recordDeletedReportId(reportId);
+
   const client = getSupabaseClient();
   if (!client) return { success: false, reason: 'No Supabase client' };
   try {

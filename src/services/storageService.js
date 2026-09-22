@@ -28,6 +28,7 @@ const KEYS = {
   OPERATORS: 'rp_master_operators_v1',
   SETTINGS: 'rp_system_settings_v1',
   SHIFT_REPORTS: 'rp_shift_reports_v1',
+  DELETED_REPORT_IDS: 'rp_deleted_report_ids_v1',
   ACTIVE_REPORT_ID: 'rp_active_report_id_v1',
   SYNC_QUEUE: 'rp_sync_queue_v1',
   CURRENT_USER: 'rp_current_user_v1',
@@ -35,6 +36,40 @@ const KEYS = {
   HEALTH_METRICS: 'rp_health_metrics_v1',
   LAST_BACKUP: 'rp_last_backup_v1'
 };
+
+// --- Tombstone / Deleted Reports Registry ---
+// Guarantees deleted reports stay permanently deleted and are never resurrected on refresh or cloud sync
+export function getDeletedReportIds() {
+  try {
+    const raw = localStorage.getItem(KEYS.DELETED_REPORT_IDS);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+export function recordDeletedReportId(reportId) {
+  if (!reportId) return;
+  try {
+    const ids = getDeletedReportIds();
+    if (!ids.includes(reportId)) {
+      ids.push(reportId);
+      localStorage.setItem(KEYS.DELETED_REPORT_IDS, JSON.stringify(ids));
+    }
+  } catch (e) {}
+}
+
+export function isReportDeleted(reportId) {
+  if (!reportId) return false;
+  const ids = getDeletedReportIds();
+  return ids.includes(reportId);
+}
+
+export function clearDeletedReportIds() {
+  try {
+    localStorage.setItem(KEYS.DELETED_REPORT_IDS, JSON.stringify([]));
+  } catch (e) {}
+}
 
 // Dynamic Supabase client holder
 let activeSupabaseClient = null;
@@ -184,9 +219,21 @@ export function initializeStorage() {
  */
 export function clearAllProductionEntries() {
   if (typeof localStorage === 'undefined') return;
+  try {
+    const reports = JSON.parse(localStorage.getItem(KEYS.SHIFT_REPORTS) || '[]');
+    reports.forEach(r => {
+      if (r && r.id) recordDeletedReportId(r.id);
+    });
+  } catch (e) {}
   localStorage.setItem(KEYS.SHIFT_REPORTS, JSON.stringify([]));
   localStorage.removeItem(KEYS.ACTIVE_REPORT_ID);
   localStorage.setItem(KEYS.SYNC_QUEUE, JSON.stringify([]));
+  try {
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('shift_reports_sync').delete().neq('id', 'RP_PLANT_MASTER_DATA').then(() => {}).catch(() => {});
+    }
+  } catch (e) {}
 }
 
 /**
@@ -981,11 +1028,23 @@ export function clearOperationalData() {
   localStorage.setItem(KEYS.MOULDS, JSON.stringify([]));
   localStorage.setItem(KEYS.MACHINE_PART_MAPPINGS, JSON.stringify([]));
 
-  // 2. Delete Production Data
+  // 2. Delete Production Data and record tombstones
+  try {
+    const reports = JSON.parse(localStorage.getItem(KEYS.SHIFT_REPORTS) || '[]');
+    reports.forEach(r => {
+      if (r && r.id) recordDeletedReportId(r.id);
+    });
+  } catch (e) {}
   localStorage.setItem(KEYS.SHIFT_REPORTS, JSON.stringify([]));
   localStorage.removeItem(KEYS.ACTIVE_REPORT_ID);
   localStorage.removeItem('first_time_setup_completed');
   localStorage.setItem(KEYS.SYNC_QUEUE, JSON.stringify([]));
+  try {
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('shift_reports_sync').delete().neq('id', 'RP_PLANT_MASTER_DATA').then(() => {}).catch(() => {});
+    }
+  } catch (e) {}
 
   // 3. Do NOT delete Rejection Master, Downtime Master, Supervisor Master, Operator Master
   if (!localStorage.getItem(KEYS.REJECTION_CODES)) {
@@ -1009,11 +1068,18 @@ export function saveSystemSettings(settings) {
 
 // Shift Reports Management
 export function getShiftReports() {
-  return JSON.parse(localStorage.getItem(KEYS.SHIFT_REPORTS) || '[]');
+  const reports = JSON.parse(localStorage.getItem(KEYS.SHIFT_REPORTS) || '[]');
+  const deletedIds = getDeletedReportIds();
+  if (deletedIds.length === 0) return reports;
+  const deletedSet = new Set(deletedIds);
+  return reports.filter(r => r && !deletedSet.has(r.id));
 }
 
 export function saveShiftReports(reports) {
-  localStorage.setItem(KEYS.SHIFT_REPORTS, JSON.stringify(reports));
+  const deletedIds = getDeletedReportIds();
+  const deletedSet = new Set(deletedIds);
+  const cleanReports = (reports || []).filter(r => r && !deletedSet.has(r.id));
+  localStorage.setItem(KEYS.SHIFT_REPORTS, JSON.stringify(cleanReports));
 }
 
 export function getActiveReportId() {
@@ -1021,13 +1087,17 @@ export function getActiveReportId() {
 }
 
 export function setActiveReportId(id) {
+  if (isReportDeleted(id)) {
+    localStorage.removeItem(KEYS.ACTIVE_REPORT_ID);
+    return;
+  }
   localStorage.setItem(KEYS.ACTIVE_REPORT_ID, id);
 }
 
 export function getActiveReport() {
   const id = getActiveReportId();
   const reports = getShiftReports();
-  if (id) {
+  if (id && !isReportDeleted(id)) {
     const found = reports.find(r => r.id === id);
     if (found) return found;
   }
@@ -1035,6 +1105,8 @@ export function getActiveReport() {
 }
 
 export function saveActiveReport(updatedReport) {
+  if (!updatedReport || !updatedReport.id) return;
+  if (isReportDeleted(updatedReport.id)) return;
   const reports = getShiftReports();
   const idx = reports.findIndex(r => r.id === updatedReport.id);
   if (idx >= 0) {
@@ -1053,12 +1125,16 @@ export function deleteShiftReport(reportId) {
   if (!reportId) return { success: false, error: 'No reportId provided' };
 
   try {
-    const reports = getShiftReports();
+    // 1. Record in persistent tombstone store so it can NEVER be resurrected on page refresh or cloud sync
+    recordDeletedReportId(reportId);
+
+    // 2. Remove from local reports store
+    const reports = JSON.parse(localStorage.getItem(KEYS.SHIFT_REPORTS) || '[]');
     const targetReport = reports.find(r => r.id === reportId);
     const updatedReports = reports.filter(r => r.id !== reportId);
     saveShiftReports(updatedReports);
 
-    // If the active working report is the one being deleted, switch to next available or clear
+    // 3. If the active working report is the one being deleted, switch to next available or clear
     const activeId = getActiveReportId();
     if (activeId === reportId) {
       if (updatedReports.length > 0) {
@@ -1068,14 +1144,19 @@ export function deleteShiftReport(reportId) {
       }
     }
 
-    // Also remove from offline sync queue if it was pending
+    // 4. Remove from offline sync queue if it was pending
     try {
       const queue = JSON.parse(localStorage.getItem(KEYS.SYNC_QUEUE) || '[]');
-      const filteredQueue = queue.filter(item => !(item.payload && item.payload.id === reportId));
+      const filteredQueue = queue.filter(item => {
+        if (!item) return false;
+        if (item.recordId === reportId) return false;
+        if (item.payload && (item.payload.id === reportId || item.payload.report_id === reportId)) return false;
+        return true;
+      });
       localStorage.setItem(KEYS.SYNC_QUEUE, JSON.stringify(filteredQueue));
     } catch (e) {}
 
-    // Audit log
+    // 5. Audit log
     try {
       recordAuditLog({
         action: 'DELETE_SHIFT_REPORT',
@@ -1084,7 +1165,7 @@ export function deleteShiftReport(reportId) {
       });
     } catch (e) {}
 
-    // Attempt cloud deletion in background if Supabase client is connected
+    // 6. Attempt cloud deletion immediately in background
     try {
       const supabase = getSupabaseClient();
       if (supabase) {

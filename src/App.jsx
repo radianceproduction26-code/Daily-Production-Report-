@@ -41,6 +41,7 @@ import {
   getShiftReports,
   saveShiftReports,
   deleteShiftReport,
+  isReportDeleted,
   getMachines,
   saveMachines,
   getMoulds,
@@ -141,10 +142,12 @@ export default function App() {
     const unsubscribe = subscribeToShiftReports(
       (payload) => {
         try {
+          if (payload?.new?.id && isReportDeleted(payload.new.id)) return;
           console.log('Realtime shift reports sync notification received:', payload);
           const currentReports = getShiftReports();
           if (payload?.new?.full_data) {
             const incoming = payload.new.full_data;
+            if (isReportDeleted(incoming.id)) return;
             const idx = currentReports.findIndex(r => r.id === incoming.id);
             if (idx >= 0) {
               currentReports[idx] = incoming;
@@ -152,7 +155,7 @@ export default function App() {
               currentReports.unshift(incoming);
             }
             saveShiftReports(currentReports);
-            setReports([...currentReports]);
+            setReports(getShiftReports());
           } else {
             handleRefreshCloud();
           }
@@ -187,6 +190,15 @@ export default function App() {
           }
         } catch (err) {
           console.warn('Realtime master data handling error:', err);
+        }
+      },
+      (deletedId) => {
+        try {
+          console.log('Realtime delete event processed for:', deletedId);
+          setReports(getShiftReports());
+          setActiveReport(getActiveReport());
+        } catch (err) {
+          console.warn('Realtime delete handling error:', err);
         }
       }
     );
@@ -264,7 +276,7 @@ export default function App() {
   };
 
   // Permanently delete a specific shift report
-  const handleDeleteReport = (reportId) => {
+  const handleDeleteReport = async (reportId) => {
     const reportToDelete = reports.find(r => r.id === reportId);
     const dateStr = reportToDelete?.reportDate || '';
     const shiftStr = reportToDelete?.shift || '';
@@ -279,7 +291,7 @@ export default function App() {
       setReports(freshReports);
       const freshActive = getActiveReport();
       setActiveReport(freshActive);
-      deleteShiftReportFromCloud(reportId);
+      await deleteShiftReportFromCloud(reportId);
     } else {
       alert('Could not delete report: ' + (res.error || 'Unknown error'));
     }
