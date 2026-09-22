@@ -1,4 +1,19 @@
-import { getSupabaseClient, getSupabaseConfig, getShiftReports, saveShiftReports } from './storageService.js';
+import {
+  getSupabaseClient,
+  getSupabaseConfig,
+  getShiftReports,
+  saveShiftReports,
+  getParts,
+  saveParts,
+  getMachines,
+  saveMachines,
+  getMachinePartMappings,
+  saveMachinePartMappings,
+  getRejectionCodes,
+  saveRejectionCodes,
+  getDowntimeCodes,
+  saveDowntimeCodes
+} from './storageService.js';
 
 const WEBHOOK_STORAGE_KEY = 'rp_mastersheet_webhook_url_v1';
 
@@ -207,9 +222,11 @@ export async function fetchShiftReportsFromCloud() {
     }
 
     if (data && Array.isArray(data)) {
-      // Reconstruct full reports
-      const cloudReports = data.map(row => {
-        if (row.full_data && typeof row.full_data === 'object') {
+      // Reconstruct full reports (filter out master data sync payload)
+      const cloudReports = data
+        .filter(row => row.id !== 'RP_PLANT_MASTER_DATA' && row.shift !== 'MASTER_DATA')
+        .map(row => {
+          if (row.full_data && typeof row.full_data === 'object') {
           return {
             ...row.full_data,
             id: row.id,
@@ -262,7 +279,7 @@ export async function fetchShiftReportsFromCloud() {
  * Subscribes to Real-Time Postgres changes on `shift_reports_sync`
  * When any mobile device inserts/updates a report, this callback fires instantly on laptop!
  */
-export function subscribeToShiftReports(onUpdate) {
+export function subscribeToShiftReports(onShiftUpdate, onMasterUpdate) {
   const client = getSupabaseClient();
   if (!client || typeof client.channel !== 'function') {
     return () => {};
@@ -276,8 +293,16 @@ export function subscribeToShiftReports(onUpdate) {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'shift_reports_sync' },
         (payload) => {
-          if (typeof onUpdate === 'function') {
-            onUpdate(payload);
+          const rowId = payload.new?.id || payload.old?.id;
+          if (rowId === 'RP_PLANT_MASTER_DATA') {
+            console.log('📡 Realtime Cloud Master Data update received!');
+            if (typeof onMasterUpdate === 'function') {
+              onMasterUpdate(payload.new?.full_data);
+            }
+          } else {
+            if (typeof onShiftUpdate === 'function') {
+              onShiftUpdate(payload);
+            }
           }
         }
       )
@@ -310,6 +335,140 @@ export async function deleteShiftReportFromCloud(reportId) {
     return { success: true };
   } catch (err) {
     console.warn('Cloud report delete exception:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Pushes entire plant master data (Parts, Machines, Mappings, Rejection Codes, Downtime Codes)
+ * to Supabase Cloud so all devices (mobile, tablet, PCs) stay 100% synchronized in real time.
+ */
+export async function pushMasterDataToCloud(overrides = {}) {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, error: 'No active Supabase connection configured. Please check Settings.' };
+  }
+
+  try {
+    const parts = overrides.parts && overrides.parts.length > 0 ? overrides.parts : getParts();
+    const machines = overrides.machines && overrides.machines.length > 0 ? overrides.machines : getMachines();
+    const mappings = overrides.mappings && overrides.mappings.length > 0 ? overrides.mappings : getMachinePartMappings();
+    const rejectionCodes = overrides.rejectionCodes && overrides.rejectionCodes.length > 0 ? overrides.rejectionCodes : getRejectionCodes();
+    const downtimeCodes = overrides.downtimeCodes && overrides.downtimeCodes.length > 0 ? overrides.downtimeCodes : getDowntimeCodes();
+
+    const masterSnapshot = {
+      id: 'RP_PLANT_MASTER_DATA',
+      report_date: '2026-01-01',
+      shift: 'MASTER_DATA',
+      machine_number: 'SYSTEM',
+      machine_name: 'Plant Master Cloud Hub',
+      operator_name: 'SYSTEM',
+      supervisor_name: 'Mr. Lokesh',
+      part_number: 'ALL_PARTS',
+      part_name: `Cloud Plant Master (${parts.length} Parts, ${machines.length} Machines)`,
+      target_qty: parts.length,
+      production_qty: machines.length,
+      accepted_qty: mappings.length,
+      rejection_qty: rejectionCodes.length,
+      rejection_rate: 0.00,
+      downtime_minutes: downtimeCodes.length,
+      efficiency_percent: 100.0,
+      status: 'approved',
+      submitted_at: new Date().toISOString(),
+      approved_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      full_data: {
+        type: 'RP_PLANT_MASTER_DATA',
+        version: '1.0.0',
+        updatedAt: new Date().toISOString(),
+        parts,
+        machines,
+        mappings,
+        rejectionCodes,
+        downtimeCodes
+      }
+    };
+
+    const { error } = await client
+      .from('shift_reports_sync')
+      .upsert(masterSnapshot, { onConflict: 'id' });
+
+    if (error) {
+      console.warn('Master data cloud push error:', error.message);
+      return { success: false, error: error.message };
+    }
+
+    console.log(`☁️ Cloud Sync: Successfully published ${parts.length} parts and ${machines.length} machines to Supabase!`);
+    return {
+      success: true,
+      partsCount: parts.length,
+      machinesCount: machines.length,
+      mappingsCount: mappings.length,
+      syncedAt: new Date().toISOString()
+    };
+  } catch (err) {
+    console.warn('Master data cloud push exception:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Fetches latest plant master data from Supabase Cloud and updates local storage
+ */
+export async function fetchMasterDataFromCloud() {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, reason: 'No active Supabase client configured' };
+  }
+
+  try {
+    const { data, error } = await client
+      .from('shift_reports_sync')
+      .select('*')
+      .eq('id', 'RP_PLANT_MASTER_DATA')
+      .single();
+
+    if (error || !data || !data.full_data) {
+      return { success: false, error: error?.message || 'No master data record in cloud' };
+    }
+
+    const payload = data.full_data;
+    const parts = Array.isArray(payload.parts) ? payload.parts : [];
+    const machines = Array.isArray(payload.machines) ? payload.machines : [];
+    const mappings = Array.isArray(payload.mappings) ? payload.mappings : [];
+    const rejectionCodes = Array.isArray(payload.rejectionCodes) ? payload.rejectionCodes : [];
+    const downtimeCodes = Array.isArray(payload.downtimeCodes) ? payload.downtimeCodes : [];
+
+    // If cloud has valid parts, save them to local storage
+    if (parts.length > 0) {
+      saveParts(parts);
+    }
+    if (machines.length > 0) {
+      saveMachines(machines);
+    }
+    if (mappings.length > 0) {
+      saveMachinePartMappings(mappings);
+    }
+    if (rejectionCodes.length > 0) {
+      saveRejectionCodes(rejectionCodes);
+    }
+    if (downtimeCodes.length > 0) {
+      saveDowntimeCodes(downtimeCodes);
+    }
+
+    console.log(`☁️ Cloud Sync: Downloaded ${parts.length} parts and ${machines.length} machines from Supabase!`);
+
+    return {
+      success: true,
+      parts,
+      machines,
+      mappings,
+      rejectionCodes,
+      downtimeCodes,
+      updatedAt: payload.updatedAt
+    };
+  } catch (err) {
+    console.warn('Error fetching master data from cloud:', err);
     return { success: false, error: err.message };
   }
 }

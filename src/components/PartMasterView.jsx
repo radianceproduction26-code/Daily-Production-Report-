@@ -17,7 +17,9 @@ import {
   ShieldCheck,
   Filter,
   Lock,
-  Edit3
+  Edit3,
+  Cloud,
+  RefreshCw
 } from 'lucide-react';
 import {
   downloadUnifiedPartMasterTemplate,
@@ -40,6 +42,10 @@ import {
   generateNextDowntimeCode,
   generateNextRejectionCode
 } from '../services/storageService';
+import {
+  pushMasterDataToCloud,
+  fetchMasterDataFromCloud
+} from '../services/cloudSyncService';
 
 export default function PartMasterView({
   parts = [],
@@ -75,6 +81,47 @@ export default function PartMasterView({
   const [showAddOperator, setShowAddOperator] = useState(false);
   const [newOpName, setNewOpName] = useState('');
   const [newOpCode, setNewOpCode] = useState('');
+
+  // Cloud Sync States & Handlers
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+  const [cloudSyncMsg, setCloudSyncMsg] = useState(null);
+
+  const handlePushMasterToCloud = async () => {
+    setIsSyncingCloud(true);
+    setCloudSyncMsg(null);
+    try {
+      const res = await pushMasterDataToCloud();
+      if (res.success) {
+        setCloudSyncMsg({ type: 'success', text: `☁️ Cloud Sync Succeeded: ${res.partsCount} parts & ${res.machinesCount} machines published to Supabase! All devices updated.` });
+      } else {
+        setCloudSyncMsg({ type: 'error', text: `⚠️ Cloud Sync Notice: ${res.error || res.reason || 'Failed to push to cloud'}` });
+      }
+    } catch (err) {
+      setCloudSyncMsg({ type: 'error', text: `⚠️ Cloud Sync Error: ${err.message}` });
+    } finally {
+      setIsSyncingCloud(false);
+      setTimeout(() => setCloudSyncMsg(null), 7000);
+    }
+  };
+
+  const handlePullMasterFromCloud = async () => {
+    setIsSyncingCloud(true);
+    setCloudSyncMsg(null);
+    try {
+      const res = await fetchMasterDataFromCloud();
+      if (res.success) {
+        setCloudSyncMsg({ type: 'success', text: `☁️ Cloud Pull Succeeded: Downloaded ${res.parts?.length || 0} parts & ${res.machines?.length || 0} machines from Supabase!` });
+        if (onRefreshData) onRefreshData();
+      } else {
+        setCloudSyncMsg({ type: 'error', text: `⚠️ Cloud Pull Notice: ${res.error || res.reason || 'Failed to download master data'}` });
+      }
+    } catch (err) {
+      setCloudSyncMsg({ type: 'error', text: `⚠️ Cloud Pull Error: ${err.message}` });
+    } finally {
+      setIsSyncingCloud(false);
+      setTimeout(() => setCloudSyncMsg(null), 7000);
+    }
+  };
 
   // Handle inline update of Actual Cycle Time
   const handleActualCycleTimeChange = (partId, value) => {
@@ -152,9 +199,16 @@ export default function PartMasterView({
         mappings: result.mappings
       });
 
+      // Immediately push to Supabase Cloud so all mobile devices & tablets receive these parts
+      const cloudRes = await pushMasterDataToCloud({
+        parts: result.parts,
+        machines: result.machines,
+        mappings: result.mappings
+      });
+
       setUploadResult({
         success: true,
-        message: `Loaded: ${result.partsCount} Parts, ${result.machinesCount} Machines, ${result.mappingsCount} Mappings.`
+        message: `Loaded: ${result.partsCount} Parts, ${result.machinesCount} Machines, ${result.mappingsCount} Mappings.\n${cloudRes.success ? '☁️ Master Data successfully published to Supabase Cloud! All devices are synchronized.' : '⚠️ Saved locally on this laptop.'}`
       });
 
       if (onRefreshData) onRefreshData();
@@ -432,9 +486,52 @@ export default function PartMasterView({
                   disabled={uploading}
                 />
               </label>
+
+              {/* Cloud Sync Buttons */}
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={handlePushMasterToCloud}
+                disabled={isSyncingCloud}
+                style={{ width: '100%', justifyContent: 'center', borderColor: 'var(--clr-primary)', color: 'var(--clr-primary)' }}
+                title="Publish local parts and machines to Supabase Cloud so all devices are updated"
+              >
+                <Cloud size={18} />
+                <span>{isSyncingCloud ? 'Syncing...' : 'Sync Master Data to Cloud'}</span>
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={handlePullMasterFromCloud}
+                disabled={isSyncingCloud}
+                style={{ width: '100%', justifyContent: 'center' }}
+                title="Download latest parts and machines from Supabase Cloud"
+              >
+                <RefreshCw size={18} className={isSyncingCloud ? 'spin' : ''} />
+                <span>Pull from Cloud</span>
+              </button>
             </div>
+
+            {/* Cloud Sync Notification Banner */}
+            {cloudSyncMsg && (
+              <div
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  background: cloudSyncMsg.type === 'success' ? 'var(--clr-success-lt)' : 'var(--clr-error-lt)',
+                  color: cloudSyncMsg.type === 'success' ? 'var(--clr-success-dark)' : 'var(--clr-error-dark)',
+                  border: `1px solid ${cloudSyncMsg.type === 'success' ? 'var(--clr-success)' : 'var(--clr-error)'}`
+                }}
+              >
+                {cloudSyncMsg.text}
+              </div>
+            )}
+
             <div style={{ fontSize: '0.78rem', color: 'var(--clr-text3)', lineHeight: 1.4 }}>
-              Uploading the 13-column template automatically creates Parts, Machines, and Machine-Part Mappings in one step.
+              Uploading the 13-column template automatically creates Parts, Machines, and Mappings, and publishes them to Supabase Cloud for instant synchronization across all floor tablets and mobiles.
             </div>
           </div>
 

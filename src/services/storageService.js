@@ -652,10 +652,23 @@ export function getMachines() {
     return m;
   });
 }
+export function syncMasterDataToCloudBackground() {
+  if (typeof window !== 'undefined') {
+    import('./cloudSyncService.js').then(mod => {
+      if (mod && typeof mod.pushMasterDataToCloud === 'function') {
+        mod.pushMasterDataToCloud().catch(err => {
+          console.warn('Master data background cloud sync notice:', err);
+        });
+      }
+    }).catch(() => {});
+  }
+}
+
 export function saveMachines(machines) {
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem(KEYS.MACHINES, JSON.stringify(machines));
   }
+  syncMasterDataToCloudBackground();
 }
 
 export function getMoulds() {
@@ -667,6 +680,7 @@ export function saveMoulds(moulds) {
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem(KEYS.MOULDS, JSON.stringify(moulds));
   }
+  syncMasterDataToCloudBackground();
 }
 
 export function getParts() {
@@ -678,6 +692,7 @@ export function saveParts(parts) {
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem(KEYS.PARTS, JSON.stringify(parts));
   }
+  syncMasterDataToCloudBackground();
 }
 
 export function getRejectionCodes() {
@@ -685,6 +700,7 @@ export function getRejectionCodes() {
 }
 export function saveRejectionCodes(codes) {
   localStorage.setItem(KEYS.REJECTION_CODES, JSON.stringify(codes));
+  syncMasterDataToCloudBackground();
 }
 
 export function getDowntimeCodes() {
@@ -692,6 +708,7 @@ export function getDowntimeCodes() {
 }
 export function saveDowntimeCodes(codes) {
   localStorage.setItem(KEYS.DOWNTIME_CODES, JSON.stringify(codes));
+  syncMasterDataToCloudBackground();
 }
 
 /**
@@ -863,6 +880,7 @@ export function saveMachinePartMappings(mappings) {
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem(KEYS.MACHINE_PART_MAPPINGS, JSON.stringify(mappings));
   }
+  syncMasterDataToCloudBackground();
 }
 
 export function saveUnifiedMasterData({ parts = [], machines = [], mappings = [] }) {
@@ -877,6 +895,7 @@ export function saveUnifiedMasterData({ parts = [], machines = [], mappings = []
       localStorage.setItem(KEYS.MACHINE_PART_MAPPINGS, JSON.stringify(mappings));
     }
   }
+  syncMasterDataToCloudBackground();
 }
 
 export function getApprovedPartsForMachine(machineCode) {

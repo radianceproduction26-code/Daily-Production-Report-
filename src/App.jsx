@@ -28,7 +28,9 @@ import {
   pushShiftReportToCloud,
   fetchShiftReportsFromCloud,
   subscribeToShiftReports,
-  deleteShiftReportFromCloud
+  deleteShiftReportFromCloud,
+  pushMasterDataToCloud,
+  fetchMasterDataFromCloud
 } from './services/cloudSyncService';
 import { I18nProvider } from './i18n/I18nContext';
 
@@ -99,12 +101,30 @@ export default function App() {
   const handleRefreshCloud = async () => {
     setIsCloudSyncing(true);
     try {
+      // 1. Fetch shift reports from cloud
       const res = await fetchShiftReportsFromCloud();
       if (res && res.success && res.reports) {
         setReports(res.reports);
         const active = getActiveReport();
         if (active) setActiveReport(active);
       }
+
+      // 2. Fetch plant master data (parts, machines, mappings, rejections) from cloud
+      const masterRes = await fetchMasterDataFromCloud();
+      if (masterRes && masterRes.success) {
+        if (masterRes.parts?.length > 0) setParts(masterRes.parts);
+        if (masterRes.machines?.length > 0) setMachines(masterRes.machines);
+        if (masterRes.mappings?.length > 0) setMappings(masterRes.mappings);
+        if (masterRes.rejectionCodes?.length > 0) setRejectionCodes(masterRes.rejectionCodes);
+        if (masterRes.downtimeCodes?.length > 0) setDowntimeCodes(masterRes.downtimeCodes);
+      } else {
+        // If cloud does not have master data snapshot yet, push this device's parts to cloud
+        const localParts = getParts();
+        if (localParts && localParts.length > 0) {
+          pushMasterDataToCloud().catch(() => {});
+        }
+      }
+
       setLastCloudSyncTime(new Date().toISOString());
     } catch (e) {
       console.warn('Cloud refresh warning:', e);
@@ -114,31 +134,62 @@ export default function App() {
   };
 
   useEffect(() => {
-    // Initial fetch from cloud database
+    // Initial fetch from cloud database (reports & master data)
     handleRefreshCloud();
 
-    // Subscribe to live Postgres changes on shift_reports_sync
-    const unsubscribe = subscribeToShiftReports((payload) => {
-      try {
-        console.log('Realtime shift reports sync notification received:', payload);
-        const currentReports = getShiftReports();
-        if (payload?.new?.full_data) {
-          const incoming = payload.new.full_data;
-          const idx = currentReports.findIndex(r => r.id === incoming.id);
-          if (idx >= 0) {
-            currentReports[idx] = incoming;
+    // Subscribe to live Postgres changes on shift_reports_sync (both reports and master data)
+    const unsubscribe = subscribeToShiftReports(
+      (payload) => {
+        try {
+          console.log('Realtime shift reports sync notification received:', payload);
+          const currentReports = getShiftReports();
+          if (payload?.new?.full_data) {
+            const incoming = payload.new.full_data;
+            const idx = currentReports.findIndex(r => r.id === incoming.id);
+            if (idx >= 0) {
+              currentReports[idx] = incoming;
+            } else {
+              currentReports.unshift(incoming);
+            }
+            saveShiftReports(currentReports);
+            setReports([...currentReports]);
           } else {
-            currentReports.unshift(incoming);
+            handleRefreshCloud();
           }
-          saveShiftReports(currentReports);
-          setReports([...currentReports]);
-        } else {
-          handleRefreshCloud();
+        } catch (err) {
+          console.warn('Realtime payload handling error:', err);
         }
-      } catch (err) {
-        console.warn('Realtime payload handling error:', err);
+      },
+      (incomingMasterData) => {
+        try {
+          console.log('Realtime master data sync received across devices:', incomingMasterData);
+          if (incomingMasterData) {
+            if (incomingMasterData.parts?.length > 0) {
+              saveParts(incomingMasterData.parts);
+              setParts(incomingMasterData.parts);
+            }
+            if (incomingMasterData.machines?.length > 0) {
+              saveMachines(incomingMasterData.machines);
+              setMachines(incomingMasterData.machines);
+            }
+            if (incomingMasterData.mappings?.length > 0) {
+              saveMachinePartMappings(incomingMasterData.mappings);
+              setMappings(incomingMasterData.mappings);
+            }
+            if (incomingMasterData.rejectionCodes?.length > 0) {
+              saveRejectionCodes(incomingMasterData.rejectionCodes);
+              setRejectionCodes(incomingMasterData.rejectionCodes);
+            }
+            if (incomingMasterData.downtimeCodes?.length > 0) {
+              saveDowntimeCodes(incomingMasterData.downtimeCodes);
+              setDowntimeCodes(incomingMasterData.downtimeCodes);
+            }
+          }
+        } catch (err) {
+          console.warn('Realtime master data handling error:', err);
+        }
       }
-    });
+    );
 
     return () => {
       if (typeof unsubscribe === 'function') unsubscribe();
