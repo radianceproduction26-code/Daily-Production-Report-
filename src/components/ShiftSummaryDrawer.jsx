@@ -14,7 +14,8 @@ import {
   Sparkles,
   Layers,
   Clock,
-  Gauge
+  Gauge,
+  Trash2
 } from 'lucide-react';
 import { calculateOEEMetrics } from '../services/validationEngine';
 import { exportShiftReportToExcel, exportShiftReportPDF, sendShiftReportEmail } from '../services/exportService';
@@ -29,7 +30,8 @@ export default function ShiftSummaryDrawer({
   onSubmitReport,
   onApproveReport,
   onUnlockReport,
-  systemSettings
+  systemSettings,
+  onDeleteReport
 }) {
   const { t, language } = useI18n();
   if (!isOpen || !activeReport) return null;
@@ -361,6 +363,27 @@ export default function ShiftSummaryDrawer({
             >
               <Mail size={18} />
               <span>{isEmailing ? 'Dispatching...' : t('btn_approve_report')}</span>
+            </button>
+          )}
+
+          {/* Delete Action (Supervisor / Admin) */}
+          {onDeleteReport && (currentUser.role === 'supervisor' || currentUser.role === 'production_manager' || currentUser.role === 'admin') && (
+            <button
+              type="button"
+              className="btn btn-outline btn-full"
+              style={{
+                color: 'var(--clr-error)',
+                borderColor: 'rgba(239, 68, 68, 0.4)',
+                background: 'rgba(239, 68, 68, 0.05)',
+                marginTop: '4px'
+              }}
+              onClick={() => {
+                onDeleteReport(activeReport.id);
+                onClose();
+              }}
+            >
+              <Trash2 size={16} />
+              <span>Delete This Shift Report</span>
             </button>
           )}
         </div>

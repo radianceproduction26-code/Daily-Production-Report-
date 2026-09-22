@@ -38,7 +38,8 @@ export default function DashboardView({
   onSelectReportForViewing,
   initialSubTab = 'oee',
   onRefreshCloud,
-  isSyncing = false
+  isSyncing = false,
+  onDeleteReport
 }) {
   const { t, getRejectionDescription, getDowntimeCategory } = useI18n();
   const [dashboardMode, setDashboardMode] = useState(
@@ -652,6 +653,7 @@ export default function DashboardView({
           onSelectReportForViewing={onSelectReportForViewing}
           onRefreshCloud={onRefreshCloud}
           isSyncing={isSyncing}
+          onDeleteReport={onDeleteReport}
         />
       )}
 
@@ -663,6 +665,7 @@ export default function DashboardView({
           reports={reports}
           machines={machines}
           onSelectReportForViewing={onSelectReportForViewing}
+          onDeleteReport={onDeleteReport}
         />
       )}
 

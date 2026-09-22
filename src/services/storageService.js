@@ -1010,6 +1010,62 @@ export function saveActiveReport(updatedReport) {
 }
 
 /**
+ * Permanently deletes a specific shift report by ID from local storage & Supabase Cloud
+ */
+export function deleteShiftReport(reportId) {
+  if (!reportId) return { success: false, error: 'No reportId provided' };
+
+  try {
+    const reports = getShiftReports();
+    const targetReport = reports.find(r => r.id === reportId);
+    const updatedReports = reports.filter(r => r.id !== reportId);
+    saveShiftReports(updatedReports);
+
+    // If the active working report is the one being deleted, switch to next available or clear
+    const activeId = getActiveReportId();
+    if (activeId === reportId) {
+      if (updatedReports.length > 0) {
+        setActiveReportId(updatedReports[0].id);
+      } else {
+        localStorage.removeItem(KEYS.ACTIVE_REPORT_ID);
+      }
+    }
+
+    // Also remove from offline sync queue if it was pending
+    try {
+      const queue = JSON.parse(localStorage.getItem(KEYS.SYNC_QUEUE) || '[]');
+      const filteredQueue = queue.filter(item => !(item.payload && item.payload.id === reportId));
+      localStorage.setItem(KEYS.SYNC_QUEUE, JSON.stringify(filteredQueue));
+    } catch (e) {}
+
+    // Audit log
+    try {
+      recordAuditLog({
+        action: 'DELETE_SHIFT_REPORT',
+        performedBy: 'Supervisor / Production Admin',
+        details: `Deleted shift report ${reportId} (${targetReport?.reportDate || ''} - ${targetReport?.shift || ''} - ${targetReport?.machineNumber || ''})`
+      });
+    } catch (e) {}
+
+    // Attempt cloud deletion in background if Supabase client is connected
+    try {
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        supabase.from('shift_reports_sync').delete().eq('id', reportId).then(({ error }) => {
+          if (error) console.warn('Supabase cloud report delete notice:', error.message);
+          else console.log('Successfully deleted shift report from Supabase cloud:', reportId);
+        });
+      }
+    } catch (e) {}
+
+    return { success: true, remainingCount: updatedReports.length, reports: updatedReports };
+  } catch (err) {
+    console.error('Error deleting shift report:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
  * Creates a new shift report with initial Production Session 1
  * (Part Master is the operational tool master: Part Number = Production Tool Identifier)
  */

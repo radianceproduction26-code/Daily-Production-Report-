@@ -293,3 +293,23 @@ export function subscribeToShiftReports(onUpdate) {
     return () => {};
   }
 }
+
+/**
+ * Deletes a shift report record from Supabase Cloud table `shift_reports_sync`
+ */
+export async function deleteShiftReportFromCloud(reportId) {
+  if (!reportId) return { success: false };
+  const client = getSupabaseClient();
+  if (!client) return { success: false, reason: 'No Supabase client' };
+  try {
+    const { error } = await client.from('shift_reports_sync').delete().eq('id', reportId);
+    if (error) {
+      console.warn('Cloud report delete error:', error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err) {
+    console.warn('Cloud report delete exception:', err);
+    return { success: false, error: err.message };
+  }
+}

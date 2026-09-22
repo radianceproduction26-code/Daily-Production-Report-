@@ -16,7 +16,8 @@ import {
   Zap,
   TrendingUp,
   SlidersHorizontal,
-  ChevronDown
+  ChevronDown,
+  Trash2
 } from 'lucide-react';
 import { exportConsolidatedMasterSheetToExcel, exportShiftReportToExcel } from '../services/exportService';
 import {
@@ -33,7 +34,8 @@ export default function MasterSheetView({
   onSelectReportForViewing,
   onRefreshCloud,
   isSyncing = false,
-  lastSyncTime = null
+  lastSyncTime = null,
+  onDeleteReport
 }) {
   const { t } = useI18n();
   const supabaseConfig = getSupabaseConfig();
@@ -598,6 +600,22 @@ export default function MasterSheetView({
                           >
                             <Download size={12} />
                           </button>
+                          {onDeleteReport && (
+                            <button
+                              type="button"
+                              className="btn btn-outline btn-xs"
+                              onClick={() => onDeleteReport(report.id)}
+                              title="Delete this shift report"
+                              style={{
+                                color: 'var(--clr-error)',
+                                borderColor: 'rgba(239, 68, 68, 0.4)',
+                                background: 'rgba(239, 68, 68, 0.05)'
+                              }}
+                            >
+                              <Trash2 size={12} />
+                              <span>Delete</span>
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

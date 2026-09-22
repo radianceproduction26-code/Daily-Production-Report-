@@ -11,13 +11,14 @@ import {
   Globe,
   Mail,
   Send,
-  FileText
+  FileText,
+  Trash2
 } from 'lucide-react';
 import { exportShiftReportToExcel, exportShiftReportPDF, sendDailyProductionSummaryEmail } from '../services/exportService';
 import { getSystemSettings } from '../services/storageService';
 import { useI18n } from '../i18n/I18nContext';
 
-export default function ReportsView({ reports = [], machines = [], onSelectReportForViewing }) {
+export default function ReportsView({ reports = [], machines = [], onSelectReportForViewing, onDeleteReport }) {
   const { t, language } = useI18n();
   const [reportType, setReportType] = useState('shift'); // 'shift', 'daily', 'machine', 'rejection', 'downtime', 'material'
   const [filterDate, setFilterDate] = useState(new Date().toISOString().split('T')[0]);
@@ -254,6 +255,18 @@ export default function ReportsView({ reports = [], machines = [], onSelectRepor
                     <Mail size={14} />
                     <span>{isCurrentlyEmailing ? '...' : 'Email'}</span>
                   </button>
+                  {onDeleteReport && (
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      style={{ color: 'var(--clr-error)', borderColor: 'rgba(239, 68, 68, 0.4)' }}
+                      onClick={() => onDeleteReport(rep.id)}
+                      title="Delete Shift Report"
+                    >
+                      <Trash2 size={14} />
+                      <span>Delete</span>
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -373,6 +386,18 @@ export default function ReportsView({ reports = [], machines = [], onSelectRepor
                           <Mail size={14} />
                           <span>{isCurrentlyEmailing ? 'Sending...' : 'Email'}</span>
                         </button>
+                        {onDeleteReport && (
+                          <button
+                            type="button"
+                            className="btn-log-hour"
+                            style={{ height: '32px', padding: '0 10px', color: 'var(--clr-error)', borderColor: 'rgba(239, 68, 68, 0.4)' }}
+                            onClick={() => onDeleteReport(rep.id)}
+                            title="Delete Shift Report"
+                          >
+                            <Trash2 size={14} />
+                            <span>Delete</span>
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

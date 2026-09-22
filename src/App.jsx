@@ -27,7 +27,8 @@ import { checkPilotReadiness } from './services/dataUploadService';
 import {
   pushShiftReportToCloud,
   fetchShiftReportsFromCloud,
-  subscribeToShiftReports
+  subscribeToShiftReports,
+  deleteShiftReportFromCloud
 } from './services/cloudSyncService';
 import { I18nProvider } from './i18n/I18nContext';
 
@@ -37,6 +38,7 @@ import {
   saveActiveReport,
   getShiftReports,
   saveShiftReports,
+  deleteShiftReport,
   getMachines,
   saveMachines,
   getMoulds,
@@ -208,6 +210,28 @@ export default function App() {
   const handleOpenMouldChangeModal = (hourIndex = null) => {
     setMouldChangeHourIndex(hourIndex);
     setIsMouldChangeModalOpen(true);
+  };
+
+  // Permanently delete a specific shift report
+  const handleDeleteReport = (reportId) => {
+    const reportToDelete = reports.find(r => r.id === reportId);
+    const dateStr = reportToDelete?.reportDate || '';
+    const shiftStr = reportToDelete?.shift || '';
+    const mcStr = reportToDelete?.machineNumber || '';
+
+    const confirmMsg = `Are you sure you want to permanently delete this shift report?\n\nDate: ${dateStr}\nShift: ${shiftStr}\nMachine: ${mcStr}\n\nThis will remove the report permanently from storage and cloud database.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    const res = deleteShiftReport(reportId);
+    if (res.success) {
+      const freshReports = getShiftReports();
+      setReports(freshReports);
+      const freshActive = getActiveReport();
+      setActiveReport(freshActive);
+      deleteShiftReportFromCloud(reportId);
+    } else {
+      alert('Could not delete report: ' + (res.error || 'Unknown error'));
+    }
   };
 
   // Sync state helper: saves locally and pushes to Supabase Cloud + Webhook
@@ -589,6 +613,7 @@ export default function App() {
             onRefreshCloud={handleRefreshCloud}
             isSyncing={isCloudSyncing}
             lastSyncTime={lastCloudSyncTime}
+            onDeleteReport={handleDeleteReport}
           />
         )}
 
@@ -606,6 +631,7 @@ export default function App() {
             initialSubTab={activeTab === 'reports' ? 'reports' : 'oee'}
             onRefreshCloud={handleRefreshCloud}
             isSyncing={isCloudSyncing}
+            onDeleteReport={handleDeleteReport}
           />
         )}
 
@@ -736,6 +762,7 @@ export default function App() {
           onApproveReport={handleApproveReport}
           onUnlockReport={handleUnlockReport}
           systemSettings={settings}
+          onDeleteReport={handleDeleteReport}
         />
       )}
 
