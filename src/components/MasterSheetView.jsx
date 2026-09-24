@@ -179,14 +179,14 @@ export default function MasterSheetView({
       "Date", "Shift", "Machine", "Part Number", "Part Name",
       "Operator", "Supervisor", "Target Qty", "Production Qty",
       "Accepted Qty", "Rejection Qty", "Rejection %", "Downtime (Min)",
-      "Efficiency %", "Status", "Submitted At"
+      "Efficiency %", "Lumps (Kg)", "Status", "Submitted At"
     ]);
   }
   sheet.appendRow([
     data.date, data.shift, data.machineNumber, data.partNumber, data.partName,
     data.operatorName, data.supervisorName, data.targetQty, data.productionQty,
     data.acceptedQty, data.rejectionQty, data.rejectionRatePercent + "%",
-    data.downtimeMinutes, data.efficiencyPercent + "%", data.status, data.submittedAt
+    data.downtimeMinutes, data.efficiencyPercent + "%", (data.lumps_generated_kg || data.lumpsGeneratedKg || 0) + " kg", data.status, data.submittedAt
   ]);
   return ContentService.createTextOutput(JSON.stringify({result: "success"})).setMimeType(ContentService.MimeType.JSON);
 }`;
@@ -454,6 +454,7 @@ export default function MasterSheetView({
                 <th style={{ padding: '10px 12px', fontWeight: 700, textAlign: 'right' }}>Rej Rate</th>
                 <th style={{ padding: '10px 12px', fontWeight: 700, textAlign: 'right' }}>Downtime</th>
                 <th style={{ padding: '10px 12px', fontWeight: 700, textAlign: 'right' }}>Efficiency</th>
+                <th style={{ padding: '10px 12px', fontWeight: 700, textAlign: 'right' }}>Lumps (kg)</th>
                 <th style={{ padding: '10px 12px', fontWeight: 700, textAlign: 'center' }}>Status</th>
                 <th style={{ padding: '10px 12px', fontWeight: 700, textAlign: 'center' }}>Actions</th>
               </tr>
@@ -563,6 +564,11 @@ export default function MasterSheetView({
                       {/* Efficiency */}
                       <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: 'var(--clr-primary)' }}>
                         {s.efficiency_percent}%
+                      </td>
+
+                      {/* Lumps (kg) */}
+                      <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 600, color: 'var(--clr-text)' }}>
+                        {(report.lumpsGeneratedKg !== undefined && report.lumpsGeneratedKg !== null ? report.lumpsGeneratedKg : 0)} kg
                       </td>
 
                       {/* Status */}

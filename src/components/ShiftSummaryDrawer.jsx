@@ -15,7 +15,8 @@ import {
   Layers,
   Clock,
   Gauge,
-  Trash2
+  Trash2,
+  Scale
 } from 'lucide-react';
 import { calculateOEEMetrics } from '../services/validationEngine';
 import { exportShiftReportToExcel, exportShiftReportPDF, sendShiftReportEmail } from '../services/exportService';
@@ -37,7 +38,14 @@ export default function ShiftSummaryDrawer({
   if (!isOpen || !activeReport) return null;
 
   const [supervisorNotes, setSupervisorNotes] = useState(activeReport.supervisorNotes || '');
-  const [selectedSupervisor, setSelectedSupervisor] = useState(activeReport.supervisorName || '');
+  const [selectedSupervisor, setSelectedSupervisor] = useState(
+    activeReport.supervisorName || (currentUser?.role === 'supervisor' ? currentUser.fullName : 'Mr. Lokesh')
+  );
+  const [lumpsGeneratedKg, setLumpsGeneratedKg] = useState(
+    activeReport.lumpsGeneratedKg !== undefined && activeReport.lumpsGeneratedKg !== null
+      ? activeReport.lumpsGeneratedKg
+      : ''
+  );
   const [unlockReason, setUnlockReason] = useState('');
   const [isEmailing, setIsEmailing] = useState(false);
   const [emailStatus, setEmailStatus] = useState(null);
@@ -79,24 +87,46 @@ export default function ShiftSummaryDrawer({
     cavityCount: primarySession.cavityCount || 2
   });
 
-  const handleOperatorSubmit = () => {
-    onSubmitReport(activeReport.id);
+  const handleValidateAndSubmit = () => {
+    if (lumpsGeneratedKg === '' || isNaN(Number(lumpsGeneratedKg)) || Number(lumpsGeneratedKg) < 0) {
+      alert(t('lumps_input_required') || 'Supervisor must enter Lumps Generated (kg) before submitting (enter 0 if none).');
+      return;
+    }
+    if (!selectedSupervisor) {
+      alert('Supervisor selection is mandatory before report submission. Please select Mr. Lokesh or Mr. Akshay.');
+      return;
+    }
+    onSubmitReport(activeReport.id, {
+      lumpsGeneratedKg: Number(lumpsGeneratedKg),
+      supervisorName: selectedSupervisor,
+      supervisorNotes
+    });
     onClose();
   };
 
   const handleSupervisorApprove = async () => {
+    if (lumpsGeneratedKg === '' || isNaN(Number(lumpsGeneratedKg)) || Number(lumpsGeneratedKg) < 0) {
+      alert(t('lumps_input_required') || 'Supervisor must enter Lumps Generated (kg) before report approval (enter 0 if none).');
+      return;
+    }
     if (!selectedSupervisor) {
       alert('Supervisor selection is mandatory before report approval. Please select Mr. Lokesh or Mr. Akshay.');
       return;
     }
     setIsEmailing(true);
-    const emailResult = await sendShiftReportEmail(activeReport, systemSettings.autoEmailRecipients);
-    const backupResult = executeDailyBackupPipeline(activeReport, systemSettings.autoEmailRecipients);
+    const updatedPayload = {
+      ...activeReport,
+      lumpsGeneratedKg: Number(lumpsGeneratedKg),
+      supervisorNotes,
+      supervisorName: selectedSupervisor
+    };
+    const emailResult = await sendShiftReportEmail(updatedPayload, systemSettings.autoEmailRecipients);
+    const backupResult = executeDailyBackupPipeline(updatedPayload, systemSettings.autoEmailRecipients);
     setBackupStatus(backupResult.status);
     setEmailStatus(emailResult);
     setIsEmailing(false);
 
-    onApproveReport(activeReport.id, supervisorNotes, selectedSupervisor);
+    onApproveReport(activeReport.id, supervisorNotes, selectedSupervisor, Number(lumpsGeneratedKg));
   };
 
   const handleManagerUnlock = () => {
@@ -141,6 +171,10 @@ export default function ShiftSummaryDrawer({
             <span className="badge badge-gray">{activeReport.reportDate}</span>
             <span className={`badge ${activeReport.status === 'approved' ? 'badge-success' : 'badge-warning'}`}>
               {activeReport.status.toUpperCase()}
+            </span>
+            <span className="badge badge-amber" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              <Scale size={12} />
+              <span>Lumps: {activeReport.lumpsGeneratedKg !== undefined && activeReport.lumpsGeneratedKg !== null ? activeReport.lumpsGeneratedKg : (lumpsGeneratedKg !== '' ? lumpsGeneratedKg : 0)} kg</span>
             </span>
             <span style={{ fontSize: '0.78rem', color: 'var(--clr-text3)', marginLeft: 'auto' }}>
               Op: <strong>{activeReport.operator_name || activeReport.operatorName || 'Operator'}</strong>
@@ -241,6 +275,45 @@ export default function ShiftSummaryDrawer({
           {/* Supervisor Selection & Signoff Block */}
           {activeReport.status !== 'approved' && (
             <div style={{ background: 'var(--bg-surface2)', border: '1px solid var(--clr-border)', borderRadius: 'var(--r-md)', padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--clr-border)', paddingBottom: '6px' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--clr-warning)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <CheckCircle size={15} />
+                  <span>Supervisor Floor Inspection</span>
+                </span>
+                <span className="badge badge-amber" style={{ fontSize: '0.68rem' }}>Required Before Submit</span>
+              </div>
+
+              {/* Lumps Generated (kg) - Mandatory Supervisor Field */}
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" style={{ fontWeight: 700, color: 'var(--clr-primary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Scale size={16} color="var(--clr-primary)" />
+                    <span>{t('lumps_generated') || 'Lumps Generated (kg)'} *</span>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--clr-text3)', fontWeight: 600 }}>Weight in kg</span>
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    className="touch-input"
+                    style={{ height: '44px', fontSize: '1rem', fontWeight: 700, paddingRight: '48px' }}
+                    placeholder="0.0"
+                    value={lumpsGeneratedKg}
+                    onChange={(e) => setLumpsGeneratedKg(e.target.value)}
+                    required
+                  />
+                  <span style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', fontWeight: 800, color: 'var(--clr-text3)', fontSize: '0.85rem' }}>
+                    KG
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.73rem', color: 'var(--clr-text3)', marginTop: '3px' }}>
+                  {t('lumps_generated_help') || 'Total start-up, purging & changeover lumps generated during the shift (in kg).'}
+                </div>
+              </div>
+
+              {/* Authorized Supervisor Dropdown */}
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label" style={{ fontWeight: 700, color: 'var(--clr-warning)' }}>
                   <span>Authorized Supervisor *</span>
@@ -249,13 +322,14 @@ export default function ShiftSummaryDrawer({
                   className="touch-select"
                   value={selectedSupervisor}
                   onChange={(e) => setSelectedSupervisor(e.target.value)}
-                  disabled={currentUser.role === 'operator'}
                 >
                   <option value="">-- Select Supervisor --</option>
                   <option value="Mr. Lokesh">Mr. Lokesh</option>
                   <option value="Mr. Akshay">Mr. Akshay</option>
                 </select>
               </div>
+
+              {/* Supervisor Remarks */}
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">
                   <span>Supervisor Remarks</span>
@@ -265,23 +339,30 @@ export default function ShiftSummaryDrawer({
                   style={{ height: '60px', padding: '8px', fontSize: '0.85rem' }}
                   value={supervisorNotes}
                   onChange={(e) => setSupervisorNotes(e.target.value)}
-                  placeholder="Quality notes, scrap remarks, or clearances..."
-                  disabled={currentUser.role === 'operator'}
+                  placeholder="Quality notes, scrap/lump remarks, or clearances..."
                 />
               </div>
             </div>
           )}
 
           {activeReport.status === 'approved' && (
-            <div style={{ background: 'var(--clr-success-lt)', border: '1px solid var(--clr-success)', borderRadius: 'var(--r-md)', padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <span style={{ fontSize: '0.72rem', color: 'var(--clr-success-dark)', textTransform: 'uppercase', fontWeight: 700 }}>Signed off by:</span>
-                <div style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--clr-success-dark)' }}>
-                  {activeReport.supervisorName || 'Mr. Lokesh'}
+            <div style={{ background: 'var(--clr-success-lt)', border: '1px solid var(--clr-success)', borderRadius: 'var(--r-md)', padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--clr-success-dark)', textTransform: 'uppercase', fontWeight: 700 }}>Signed off by:</span>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--clr-success-dark)' }}>
+                    {activeReport.supervisorName || 'Mr. Lokesh'}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--clr-text3)', textTransform: 'uppercase', fontWeight: 700 }}>Lumps Generated:</span>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--clr-primary)' }}>
+                    {activeReport.lumpsGeneratedKg !== undefined && activeReport.lumpsGeneratedKg !== null ? activeReport.lumpsGeneratedKg : 0} kg
+                  </div>
                 </div>
               </div>
               {activeReport.supervisorNotes && (
-                <div style={{ fontSize: '0.8rem', color: 'var(--clr-text2)', fontStyle: 'italic', maxWidth: '60%' }}>
+                <div style={{ fontSize: '0.8rem', color: 'var(--clr-text2)', fontStyle: 'italic', borderTop: '1px solid rgba(16, 185, 129, 0.2)', paddingTop: '6px' }}>
                   "{activeReport.supervisorNotes}"
                 </div>
               )}
@@ -340,12 +421,12 @@ export default function ShiftSummaryDrawer({
             <span>PDF</span>
           </button>
 
-          {/* Operator Action */}
-          {activeReport.status === 'draft' && (currentUser.role === 'operator' || currentUser.role === 'admin') && (
+          {/* Submit Action */}
+          {activeReport.status === 'draft' && (
             <button
               type="button"
               className="btn btn-primary btn-full"
-              onClick={handleOperatorSubmit}
+              onClick={handleValidateAndSubmit}
             >
               <CheckCircle size={18} />
               <span>{t('btn_submit_report')}</span>

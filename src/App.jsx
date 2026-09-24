@@ -476,12 +476,19 @@ export default function App() {
     }
   };
 
-  // 5. Submit Shift Report (Operator)
-  const handleSubmitReport = (reportId) => {
+  // 5. Submit Shift Report (Operator or Supervisor)
+  const handleSubmitReport = (reportId, submissionData = {}) => {
+    const finalLumpsKg = submissionData.lumpsGeneratedKg !== undefined && submissionData.lumpsGeneratedKg !== ''
+      ? Number(submissionData.lumpsGeneratedKg)
+      : (activeReport.lumpsGeneratedKg || 0);
+
     const updated = {
       ...activeReport,
       status: 'submitted',
-      submittedAt: new Date().toISOString()
+      submittedAt: new Date().toISOString(),
+      lumpsGeneratedKg: finalLumpsKg,
+      supervisorName: submissionData.supervisorName || activeReport.supervisorName || 'Mr. Lokesh',
+      supervisorNotes: submissionData.supervisorNotes !== undefined ? submissionData.supervisorNotes : (activeReport.supervisorNotes || '')
     };
 
     recordAuditLog({
@@ -490,22 +497,31 @@ export default function App() {
       recordId: reportId,
       user: currentUser,
       oldValue: { status: activeReport.status },
-      newValue: { status: 'submitted' },
-      reason: 'Shift completed and submitted for supervisor review'
+      newValue: {
+        status: 'submitted',
+        lumpsGeneratedKg: finalLumpsKg,
+        supervisorName: updated.supervisorName
+      },
+      reason: `Shift completed with ${finalLumpsKg} kg lumps generated and submitted for supervisor review`
     });
 
     syncReportUpdates(updated);
   };
 
   // 6. Approve Shift Report (Supervisor)
-  const handleApproveReport = (reportId, notes, selectedSupervisor) => {
-    const supervisorSigner = selectedSupervisor || currentUser.fullName || 'Mr. Lokesh';
+  const handleApproveReport = (reportId, notes, selectedSupervisor, lumpsKg) => {
+    const supervisorSigner = selectedSupervisor || currentUser.fullName || activeReport.supervisorName || 'Mr. Lokesh';
+    const finalLumpsKg = lumpsKg !== undefined && lumpsKg !== ''
+      ? Number(lumpsKg)
+      : (activeReport.lumpsGeneratedKg || 0);
+
     const updated = {
       ...activeReport,
       status: 'approved',
       supervisorId: currentUser.id || 'sup-floor',
       supervisorName: supervisorSigner,
       supervisorNotes: notes,
+      lumpsGeneratedKg: finalLumpsKg,
       approvedAt: new Date().toISOString()
     };
 
@@ -515,8 +531,13 @@ export default function App() {
       recordId: reportId,
       user: { ...currentUser, fullName: supervisorSigner },
       oldValue: { status: activeReport.status },
-      newValue: { status: 'approved', supervisorNotes: notes, supervisorName: supervisorSigner },
-      reason: `Supervisor inspection completed and approved by ${supervisorSigner}`
+      newValue: {
+        status: 'approved',
+        supervisorNotes: notes,
+        supervisorName: supervisorSigner,
+        lumpsGeneratedKg: finalLumpsKg
+      },
+      reason: `Supervisor inspection completed with ${finalLumpsKg} kg lumps approved by ${supervisorSigner}`
     });
 
     syncReportUpdates(updated);

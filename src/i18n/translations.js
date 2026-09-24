@@ -132,6 +132,10 @@ export const TRANSLATIONS = {
     btn_unlock_report: 'Unlock Report',
     report_locked_notice: 'Report is Approved & Locked (Audit Controlled)',
     email_dispatched_alert: 'Automated PDF Dispatched to management distribution list.',
+    lumps_generated: 'Lumps Generated (kg)',
+    lumps_generated_sub: 'Total purge & start-up lumps in kg',
+    lumps_generated_help: 'Total start-up, purging & changeover lumps generated during the shift (in kg). Mandatory supervisor entry.',
+    lumps_input_required: 'Supervisor must enter Lumps Generated (kg) before submitting (enter 0 if none).',
 
     // Analytics Dashboard
     analytics_title: 'Plant Production Analytics & Shop Floor Intelligence',
@@ -296,6 +300,10 @@ export const TRANSLATIONS = {
     btn_unlock_report: 'रिपोर्ट अनलॉक करें',
     report_locked_notice: 'रिपोर्ट अनुमोदित एवं लॉक है (ऑडिट नियंत्रित)',
     email_dispatched_alert: 'स्वचालित PDF रिपोर्ट प्रबंधन ईमेल पर भेजी जा चुकी है।',
+    lumps_generated: 'लम्प्स जनरेटेड (कि.ग्रा.)',
+    lumps_generated_sub: 'कुल पर्ज एवं स्टार्ट-अप लम्प्स (कि.ग्रा.)',
+    lumps_generated_help: 'शिफ्ट के दौरान उत्पन्न स्टार्ट-अप और पर्जिंग लम्प्स (किग्रा में)। सुपरवाइजर द्वारा अनिवार्य प्रविष्टि।',
+    lumps_input_required: 'शिफ्ट रिपोर्ट जमा करने से पहले सुपरवाइजर को लम्प्स (कि.ग्रा.) दर्ज करना आवश्यक है (यदि कोई नहीं है तो 0 दर्ज करें)।',
 
     // Analytics Dashboard
     analytics_title: 'प्लांट उत्पादन एनालिटिक्स एवं लाइव डैशबोर्ड',

@@ -80,6 +80,7 @@ export function summarizeReportForMasterSync(report) {
     rejection_rate: rejectionRate,
     downtime_minutes: totalDt,
     efficiency_percent: efficiency,
+    lumps_generated_kg: Number(report.lumpsGeneratedKg) || 0,
     status: report.status || 'draft',
     submitted_at: report.submittedAt || (report.status === 'submitted' ? new Date().toISOString() : null),
     approved_at: report.approvedAt || null,

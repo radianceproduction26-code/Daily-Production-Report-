@@ -161,10 +161,11 @@ export function exportShiftReportToExcel(report) {
   const mouldsRunText = isMultiMould
     ? `${mouldSummaries.length} Moulds (${mouldSummaries.map(m => m.partNumber).join(', ')})`
     : (report.partNumber || 'Single Tool');
+  const lumpsText = `${report.lumpsGeneratedKg !== undefined && report.lumpsGeneratedKg !== null ? report.lumpsGeneratedKg : 0} kg`;
   rows.push([
     'Operator:', report.operator_name || report.operatorName || 'Floor Operator',
     'Supervisor:', report.supervisorName || 'Mr. Lokesh',
-    'Moulds Run:', mouldsRunText,
+    'Lumps Gen:', lumpsText,
     'Approved At:', report.approvedAt ? new Date(report.approvedAt).toLocaleString() : 'Verified on Floor',
     '', '', '', '', ''
   ]);
@@ -899,14 +900,19 @@ export function exportShiftReportPDF(report) {
   doc.text(String(report.operator_name || report.operatorName || 'Floor Operator'), startX + 145, 28);
 
   doc.setFont('helvetica', 'bold');
-  doc.text('Supervisor:', startX + 195, 28);
+  doc.text('Supervisor:', startX + 180, 28);
   doc.setFont('helvetica', 'normal');
-  doc.text(String(report.supervisorName || 'Mr. Lokesh'), startX + 213, 28);
+  doc.text(String(report.supervisorName || 'Mr. Lokesh'), startX + 198, 28);
 
   doc.setFont('helvetica', 'bold');
-  doc.text('Status:', startX + 245, 28);
+  doc.text('Lumps:', startX + 225, 28);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`${report.lumpsGeneratedKg ?? 0} kg`, startX + 236, 28);
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('Status:', startX + 252, 28);
   doc.setTextColor(16, 185, 129);
-  doc.text(String(report.status || 'APPROVED').toUpperCase(), startX + 257, 28);
+  doc.text(String(report.status || 'APPROVED').toUpperCase(), startX + 263, 28);
 
   // 3. Hourly Production Table
   const tableTopY = 35;
@@ -2301,6 +2307,7 @@ function buildMasterDashboardSheet(reports = [], customTitle = 'Radiance Polymer
   let grandAcc = 0;
   let grandRej = 0;
   let grandDt = 0;
+  let grandLumps = 0;
   let totalHourlyLogs = 0;
 
   const rejectionMap = {};
@@ -2428,6 +2435,7 @@ function buildMasterDashboardSheet(reports = [], customTitle = 'Radiance Polymer
     shiftStats[shiftKey].acc += rAcc;
     shiftStats[shiftKey].rej += rRej;
     shiftStats[shiftKey].dt += rDt;
+    grandLumps += Number(report.lumpsGeneratedKg) || 0;
   });
 
   // OEE Mathematical Computations
@@ -2578,7 +2586,7 @@ function buildMasterDashboardSheet(reports = [], customTitle = 'Radiance Polymer
     `Run: ${(operatingMinutes/60).toFixed(1)}h / ${(plannedMinutes/60).toFixed(1)}h`,
     `Tgt: ${grandTarget.toLocaleString()} pcs`,
     `Pass: ${grandAcc.toLocaleString()} pcs`,
-    `Efficiency: ${efficiencyRate.toFixed(1)}%`,
+    `Lumps: ${grandLumps.toFixed(1)} kg`,
     `Target: < 2.0%`,
     `Lost: ${((grandDt/plannedMinutes)*100).toFixed(1)}% Time`
   ], {
@@ -2895,6 +2903,7 @@ function buildMasterLedgerSheet(reports = [], customTitle = 'Radiance Polymers -
   let grandAcc = 0;
   let grandRej = 0;
   let grandDt = 0;
+  let grandLumps = 0;
 
   const rows = [];
 
@@ -2918,7 +2927,8 @@ function buildMasterLedgerSheet(reports = [], customTitle = 'Radiance Polymers -
     'Rejection (Pcs)',
     'Rej Rate (%)',
     'Downtime (Min)',
-    'Efficiency (%)'
+    'Efficiency (%)',
+    'Lumps (Kg)'
   ];
   rows.push(headers);
 
@@ -2962,6 +2972,7 @@ function buildMasterLedgerSheet(reports = [], customTitle = 'Radiance Polymers -
     grandAcc += rAcc;
     grandRej += rRej;
     grandDt += rDt;
+    grandLumps += Number(report.lumpsGeneratedKg) || 0;
 
     const rejRate = rProd > 0 ? ((rRej / rProd) * 100).toFixed(2) + '%' : '0.00%';
     const effRate = rTarget > 0 ? ((rProd / rTarget) * 100).toFixed(1) + '%' : '100.0%';
@@ -2980,7 +2991,8 @@ function buildMasterLedgerSheet(reports = [], customTitle = 'Radiance Polymers -
       rRej,
       rejRate,
       rDt,
-      effRate
+      effRate,
+      Number((Number(report.lumpsGeneratedKg) || 0).toFixed(1))
     ]);
   });
 
@@ -3003,7 +3015,8 @@ function buildMasterLedgerSheet(reports = [], customTitle = 'Radiance Polymers -
     grandRej,
     grandRejRate,
     grandDt,
-    grandEffRate
+    grandEffRate,
+    Number(grandLumps.toFixed(1))
   ]);
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
@@ -3022,7 +3035,8 @@ function buildMasterLedgerSheet(reports = [], customTitle = 'Radiance Polymers -
     { wch: 13 }, // Rejection
     { wch: 12 }, // Rej Rate
     { wch: 13 }, // Downtime
-    { wch: 13 }  // Efficiency
+    { wch: 13 }, // Efficiency
+    { wch: 12 }  // Lumps (Kg)
   ];
 
   try {

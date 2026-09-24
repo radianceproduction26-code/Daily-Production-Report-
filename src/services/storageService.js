@@ -592,6 +592,7 @@ export function createDemoShiftReport() {
     submittedAt: null,
     approvedAt: null,
     supervisorNotes: '',
+    lumpsGeneratedKg: 0,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     mouldSessions: [
@@ -1230,6 +1231,7 @@ export function createNewShiftReport({
     submittedAt: null,
     approvedAt: null,
     supervisorNotes: '',
+    lumpsGeneratedKg: 0,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     mouldSessions: [
