@@ -23,7 +23,8 @@ import {
   Gauge,
   Target,
   ArrowUpRight,
-  Cpu
+  Cpu,
+  Scale
 } from 'lucide-react';
 import { useI18n } from '../i18n/I18nContext';
 import ReportsView from './ReportsView';
@@ -46,6 +47,8 @@ export default function DashboardView({
     initialSubTab === 'mastersheet' ? 'mastersheet' : (initialSubTab === 'reports' ? 'reports' : 'oee')
   ); // 'oee', 'mastersheet', 'reports', 'pilot', 'management'
   const [selectedMachineFilter, setSelectedMachineFilter] = useState('ALL');
+  const [selectedReportScope, setSelectedReportScope] = useState('SUBMITTED_LATEST');
+  const [downtimeViewTab, setDowntimeViewTab] = useState('reasons'); // 'reasons' or 'categories'
 
   useEffect(() => {
     if (initialSubTab === 'mastersheet') {
@@ -55,29 +58,40 @@ export default function DashboardView({
     }
   }, [initialSubTab]);
 
-  const filteredReports = selectedMachineFilter === 'ALL'
-    ? reports
-    : reports.filter(r => r.machineNumber === selectedMachineFilter);
+  // Identify submitted / approved reports
+  const submittedReports = (reports || []).filter(r => r.status === 'submitted' || r.status === 'approved');
+  const latestSubmitted = submittedReports[0] || null;
 
-  // Core Aggregations
+  // Determine effective reports based on selected scope
+  let scopeReports = reports || [];
+  if (selectedReportScope === 'SUBMITTED_LATEST') {
+    scopeReports = latestSubmitted ? [latestSubmitted] : (reports.length > 0 ? [reports[0]] : []);
+  } else if (selectedReportScope === 'SUBMITTED_ALL') {
+    scopeReports = submittedReports.length > 0 ? submittedReports : reports;
+  } else if (selectedReportScope === 'ALL_REPORTS') {
+    scopeReports = reports;
+  } else {
+    const matched = reports.find(r => r.id === selectedReportScope);
+    scopeReports = matched ? [matched] : reports;
+  }
+
+  const filteredReports = selectedMachineFilter === 'ALL'
+    ? scopeReports
+    : scopeReports.filter(r => r.machineNumber === selectedMachineFilter);
+
+  // Core Aggregations directly extracted and analyzed from the scoped report(s)
   let totalProduction = 0;
   let totalAccepted = 0;
   let totalRejection = 0;
   let totalDowntimeMin = 0;
+  let totalLumpsKg = 0;
   let totalMouldChanges = 0;
   let totalHourlyLogs = 0;
   let totalTheoreticalTarget = 0;
 
-  const rejectionByCode = {};
-  const downtimeByCategory = {
-    'Machine Related': 0,
-    'Mould Related': 0,
-    'Material Related': 0,
-    'Process Related': 0,
-    'Utility Related': 0,
-    'Manpower Related': 0,
-    'Others': 0
-  };
+  const rejectionMap = {}; // { [code]: { code, reason, qty } }
+  const downtimeReasonMap = {}; // { [code]: { code, reason, category, minutes } }
+  const downtimeCategoryMap = {}; // { [category]: minutes }
 
   const machineWiseStats = {};
   machines.forEach(m => {
@@ -85,70 +99,116 @@ export default function DashboardView({
   });
 
   filteredReports.forEach(rep => {
-    totalMouldChanges += Math.max(0, rep.mouldSessions.length - 1);
+    totalLumpsKg += Number(rep.lumpsGeneratedKg) || 0;
+    const sessions = rep.mouldSessions || rep.sessions || [];
+    totalMouldChanges += Math.max(0, sessions.length - 1);
 
-    rep.mouldSessions.forEach(session => {
-      const sessionTarget = Number(session.theoreticalHourlyTarget) || 0;
-
-      (session.entries || []).forEach(e => {
-        const prod = Number(e.productionQty) || 0;
-        const acc = Number(e.acceptedQty) || 0;
-        const rej = Number(e.rejectionQty) || 0;
-        const dt = Number(e.downtimeMinutes) || 0;
-        const tgt = Number(e.theoreticalTarget) || Number(e.targetProduction) || sessionTarget || 0;
-
-        totalProduction += prod;
-        totalAccepted += acc;
-        totalRejection += rej;
-        totalDowntimeMin += dt;
-        totalTheoreticalTarget += tgt;
-        totalHourlyLogs++;
-
-        // Machine breakdown
-        if (machineWiseStats[rep.machineNumber]) {
-          machineWiseStats[rep.machineNumber].production += prod;
-          machineWiseStats[rep.machineNumber].accepted += acc;
-          machineWiseStats[rep.machineNumber].rejected += rej;
-          machineWiseStats[rep.machineNumber].downtime += dt;
-          machineWiseStats[rep.machineNumber].target += tgt;
-        }
-
-        // Rejection code breakdown (multi-reason aware)
-        if (e.rejectionBreakdown && e.rejectionBreakdown.length > 0) {
-          e.rejectionBreakdown.forEach(rb => {
-            const code = rb.code;
-            const q = Number(rb.qty || rb.quantity) || 0;
-            if (code) {
-              rejectionByCode[code] = (rejectionByCode[code] || 0) + q;
-            }
-          });
-        } else if (e.primaryRejectionCode) {
-          rejectionByCode[e.primaryRejectionCode] = (rejectionByCode[e.primaryRejectionCode] || 0) + rej;
-        }
-
-        // Downtime category breakdown (multi-reason aware)
-        if (e.downtimeBreakdown && e.downtimeBreakdown.length > 0) {
-          e.downtimeBreakdown.forEach(db => {
-            const code = db.code;
-            const mins = Number(db.minutes) || 0;
-            const dtObj = downtimeCodes.find(d => d.code === code);
-            const cat = dtObj ? dtObj.category : 'Others';
-            if (downtimeByCategory[cat] !== undefined) {
-              downtimeByCategory[cat] += mins;
-            } else {
-              downtimeByCategory['Others'] += mins;
-            }
-          });
-        } else if (e.primaryDowntimeCode) {
-          const dtObj = downtimeCodes.find(d => d.code === e.primaryDowntimeCode);
-          const cat = dtObj ? dtObj.category : 'Others';
-          if (downtimeByCategory[cat] !== undefined) {
-            downtimeByCategory[cat] += dt;
-          } else {
-            downtimeByCategory['Others'] += dt;
-          }
-        }
+    const allEntries = [];
+    sessions.forEach(sess => {
+      const sessTarget = Number(sess.theoreticalHourlyTarget) || 0;
+      (sess.entries || []).forEach(e => {
+        allEntries.push({ ...e, sessionTarget: sessTarget, session: sess });
       });
+    });
+
+    if (allEntries.length === 0 && Array.isArray(rep.entries)) {
+      rep.entries.forEach(e => allEntries.push(e));
+    }
+
+    allEntries.forEach(e => {
+      const prod = Number(e.productionQty) || 0;
+      const acc = Number(e.acceptedQty) || 0;
+      const rej = Number(e.rejectionQty) || 0;
+      const dt = Number(e.downtimeMinutes) || 0;
+      const tgt = Number(e.theoreticalTarget) || Number(e.targetProduction) || Number(e.sessionTarget) || 0;
+
+      totalProduction += prod;
+      totalAccepted += acc;
+      totalRejection += rej;
+      totalDowntimeMin += dt;
+      totalTheoreticalTarget += tgt;
+      totalHourlyLogs++;
+
+      // Machine breakdown
+      const mcNum = rep.machineNumber || 'MC03';
+      if (!machineWiseStats[mcNum]) {
+        machineWiseStats[mcNum] = { production: 0, accepted: 0, rejected: 0, downtime: 0, target: 0 };
+      }
+      machineWiseStats[mcNum].production += prod;
+      machineWiseStats[mcNum].accepted += acc;
+      machineWiseStats[mcNum].rejected += rej;
+      machineWiseStats[mcNum].downtime += dt;
+      machineWiseStats[mcNum].target += tgt;
+
+      // 1. Rejection code breakdown (from submitted entries)
+      if (Array.isArray(e.rejectionBreakdown) && e.rejectionBreakdown.length > 0) {
+        e.rejectionBreakdown.forEach(rb => {
+          const code = rb.code || 'REJ';
+          const q = Number(rb.qty || rb.quantity) || 0;
+          if (q > 0) {
+            if (!rejectionMap[code]) {
+              const masterDesc = rejectionCodes.find(r => r.code === code)?.description;
+              rejectionMap[code] = {
+                code,
+                reason: rb.reason || rb.description || masterDesc || getRejectionDescription(code) || `Defect ${code}`,
+                qty: 0
+              };
+            }
+            rejectionMap[code].qty += q;
+          }
+        });
+      } else if (rej > 0) {
+        const code = e.primaryRejectionCode || 'REJ';
+        if (!rejectionMap[code]) {
+          const masterDesc = rejectionCodes.find(r => r.code === code)?.description;
+          rejectionMap[code] = {
+            code,
+            reason: e.rejectionReason || masterDesc || getRejectionDescription(code) || `Defect ${code}`,
+            qty: 0
+          };
+        }
+        rejectionMap[code].qty += rej;
+      }
+
+      // 2. Downtime breakdown (from submitted entries)
+      if (Array.isArray(e.downtimeBreakdown) && e.downtimeBreakdown.length > 0) {
+        e.downtimeBreakdown.forEach(db => {
+          const code = db.code || 'DT';
+          const mins = Number(db.minutes) || 0;
+          if (mins > 0) {
+            const masterObj = downtimeCodes.find(d => d.code === code);
+            const reason = db.reason || db.description || masterObj?.description || getDowntimeDescription(code) || `Stoppage ${code}`;
+            const category = db.category || masterObj?.category || 'General';
+
+            if (!downtimeReasonMap[code]) {
+              downtimeReasonMap[code] = {
+                code,
+                reason,
+                category,
+                minutes: 0
+              };
+            }
+            downtimeReasonMap[code].minutes += mins;
+            downtimeCategoryMap[category] = (downtimeCategoryMap[category] || 0) + mins;
+          }
+        });
+      } else if (dt > 0) {
+        const code = e.primaryDowntimeCode || 'DT';
+        const masterObj = downtimeCodes.find(d => d.code === code);
+        const reason = e.downtimeReason || masterObj?.description || getDowntimeDescription(code) || 'Unspecified Stoppage';
+        const category = masterObj?.category || 'General';
+
+        if (!downtimeReasonMap[code]) {
+          downtimeReasonMap[code] = {
+            code,
+            reason,
+            category,
+            minutes: 0
+          };
+        }
+        downtimeReasonMap[code].minutes += dt;
+        downtimeCategoryMap[category] = (downtimeCategoryMap[category] || 0) + dt;
+      }
     });
   });
 
@@ -184,8 +244,12 @@ export default function DashboardView({
   const totalShiftMinutes = Math.max(1, filteredReports.length * 12 * 60);
   const plantUtilization = (((totalShiftMinutes - totalDowntimeMin) / totalShiftMinutes) * 100).toFixed(1);
 
-  // Sorted rejection codes
-  const sortedRejections = Object.entries(rejectionByCode).sort((a, b) => b[1] - a[1]);
+  // Sorted rejection codes by qty
+  const sortedRejections = Object.values(rejectionMap).sort((a, b) => b.qty - a.qty);
+  // Sorted downtime causes by minutes
+  const sortedDowntimeReasons = Object.values(downtimeReasonMap).sort((a, b) => b.minutes - a.minutes);
+  // Sorted downtime categories by minutes
+  const sortedDowntimeCategories = Object.entries(downtimeCategoryMap).sort((a, b) => b[1] - a[1]);
 
   return (
     <div className="main-viewport">
@@ -291,35 +355,97 @@ export default function DashboardView({
           </button>
         </div>
 
-        {/* Machine Filter Dropdown (hidden in reports sub-tab which has its own filter) */}
+        {/* Filters: Report Scope Selector & Machine Filter */}
         {dashboardMode !== 'reports' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Filter size={15} style={{ color: 'var(--clr-text3)' }} />
-            <select
-              style={{
-                width: '100%',
-                minHeight: '44px',
-                borderRadius: '10px',
-                border: '1px solid var(--clr-border)',
-                background: 'var(--bg-surface2)',
-                fontFamily: 'var(--font)',
-                fontSize: '13px',
-                padding: '0 10px',
-                fontWeight: 600
-              }}
-              value={selectedMachineFilter}
-              onChange={(e) => setSelectedMachineFilter(e.target.value)}
-            >
-              <option value="ALL">All Machines ({machines.length || 1})</option>
-              {machines.map(m => (
-                <option key={m.id || m.machineNumber} value={m.machineNumber}>
-                  {m.machineNumber} ({m.machineNumber === 'MC03' ? 'Milacron 450T' : (m.machineName || `${m.capacityTon || 450}T`)})
-                </option>
-              ))}
-              {!machines.some(m => m.machineNumber === 'MC03') && (
-                <option value="MC03">MC03 (Milacron 450T)</option>
-              )}
-            </select>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px' }}>
+              {/* Report Scope Selector */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FileText size={15} style={{ color: 'var(--clr-primary)', flexShrink: 0 }} />
+                <select
+                  style={{
+                    width: '100%',
+                    minHeight: '42px',
+                    borderRadius: '8px',
+                    border: '1.5px solid var(--clr-primary)',
+                    background: 'var(--bg-surface2)',
+                    fontSize: '12px',
+                    padding: '0 10px',
+                    fontWeight: 700,
+                    color: 'var(--clr-primary)'
+                  }}
+                  value={selectedReportScope}
+                  onChange={(e) => setSelectedReportScope(e.target.value)}
+                >
+                  <option value="SUBMITTED_LATEST">
+                    ⭐ Latest Submitted Shift ({latestSubmitted ? `${latestSubmitted.machineNumber} · ${latestSubmitted.shift} · ${latestSubmitted.reportDate}` : 'No submitted shift yet'})
+                  </option>
+                  <option value="SUBMITTED_ALL">
+                    📑 All Submitted Shifts ({submittedReports.length} Shift Reports)
+                  </option>
+                  <option value="ALL_REPORTS">
+                    🏢 All Records in System (Drafts + Submitted: {reports.length})
+                  </option>
+                  {reports.map((r, idx) => (
+                    <option key={r.id || idx} value={r.id}>
+                      Shift #{idx + 1}: {r.machineNumber} · {r.shift} · {r.reportDate} [{r.status?.toUpperCase() || 'DRAFT'}]
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Machine Filter Dropdown */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Filter size={15} style={{ color: 'var(--clr-text3)', flexShrink: 0 }} />
+                <select
+                  style={{
+                    width: '100%',
+                    minHeight: '42px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--clr-border)',
+                    background: 'var(--bg-surface2)',
+                    fontSize: '12px',
+                    padding: '0 10px',
+                    fontWeight: 600
+                  }}
+                  value={selectedMachineFilter}
+                  onChange={(e) => setSelectedMachineFilter(e.target.value)}
+                >
+                  <option value="ALL">All Fleet Machines ({machines.length || 1})</option>
+                  {machines.map(m => (
+                    <option key={m.id || m.machineNumber} value={m.machineNumber}>
+                      {m.machineNumber} ({m.machineNumber === 'MC03' ? 'Milacron 450T' : (m.machineName || `${m.capacityTon || 450}T`)})
+                    </option>
+                  ))}
+                  {!machines.some(m => m.machineNumber === 'MC03') && (
+                    <option value="MC03">MC03 (Milacron 450T)</option>
+                  )}
+                </select>
+              </div>
+            </div>
+
+            {/* Scope Indicator Tag */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '6px 12px',
+              background: 'rgba(59, 130, 246, 0.08)',
+              borderRadius: '6px',
+              fontSize: '0.76rem',
+              color: 'var(--clr-primary)',
+              flexWrap: 'wrap',
+              gap: '6px'
+            }}>
+              <span>
+                <strong>Data Source:</strong> {selectedReportScope === 'SUBMITTED_LATEST'
+                  ? (latestSubmitted ? `Shift ${latestSubmitted.shift} (${latestSubmitted.machineNumber} · ${latestSubmitted.reportDate} · ${latestSubmitted.operator_name || latestSubmitted.operatorName || 'Operator'})` : 'No submitted report found')
+                  : (selectedReportScope === 'SUBMITTED_ALL' ? `Aggregated across all ${submittedReports.length} submitted reports` : `Custom Scope (${filteredReports.length} records)`)}
+              </span>
+              <span className="badge badge-success" style={{ fontSize: '10px' }}>
+                ✓ Synced from Submitted Shift Report
+              </span>
+            </div>
           </div>
         )}
       </div>
@@ -499,6 +625,12 @@ export default function DashboardView({
               <div className="kpi-val" style={{ color: 'var(--clr-primary)' }}>{plantUtilization}%</div>
               <div className="kpi-sub">{totalMouldChanges} Mould Changes Logged</div>
             </div>
+
+            <div className="kpi-card" style={{ borderTop: '3px solid var(--clr-amber, #f59e0b)' }}>
+              <div className="kpi-title" style={{ color: 'var(--clr-amber, #f59e0b)' }}>Lumps Generated</div>
+              <div className="kpi-val" style={{ color: 'var(--clr-amber, #f59e0b)' }}>{totalLumpsKg.toFixed(1)} kg</div>
+              <div className="kpi-sub">Purge & Start-up Scrap</div>
+            </div>
           </div>
 
           {/* Machine Comparison Bars */}
@@ -585,60 +717,174 @@ export default function DashboardView({
           </div>
 
           {/* Bottom Grid: Rejections Pareto & Downtime Categories */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: '14px' }}>
-            {/* Rejection Pareto */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: '14px' }}>
+            {/* Rejection Pareto Distribution */}
             <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <h3 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <AlertTriangle size={17} color="var(--clr-error)" />
-                <span>Rejection Pareto Distribution (A–Q)</span>
-              </h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <AlertTriangle size={17} color="var(--clr-error)" />
+                  <span>Rejection Pareto Distribution</span>
+                </h3>
+                <span className="badge badge-error" style={{ fontSize: '10px' }}>
+                  {totalRejection} Pcs Total ({overallRejectionRate}%)
+                </span>
+              </div>
 
               {sortedRejections.length === 0 ? (
-                <div style={{ color: 'var(--clr-text3)', fontSize: '0.82rem', padding: '16px 0', textAlign: 'center' }}>
-                  No scrap or rejections logged in this dataset.
+                <div style={{ color: 'var(--clr-text3)', fontSize: '0.82rem', padding: '24px 0', textAlign: 'center' }}>
+                  No scrap or rejections logged in this submitted report.
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {sortedRejections.slice(0, 6).map(([code, count]) => {
-                    const pct = totalRejection > 0 ? ((count / totalRejection) * 100).toFixed(1) : 0;
-                    return (
-                      <div key={code} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: 'var(--bg-surface2)', borderRadius: '6px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                          <span style={{ fontWeight: 800, color: 'var(--clr-error)', width: '22px', flexShrink: 0 }}>{code}</span>
-                          <span style={{ fontSize: '0.78rem', color: 'var(--clr-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {getRejectionDescription(code)}
-                          </span>
+                  {(() => {
+                    let cumulativeSum = 0;
+                    return sortedRejections.map((item, idx) => {
+                      cumulativeSum += item.qty;
+                      const pct = totalRejection > 0 ? ((item.qty / totalRejection) * 100).toFixed(1) : 0;
+                      const cumulPct = totalRejection > 0 ? ((cumulativeSum / totalRejection) * 100).toFixed(1) : 0;
+                      const is80 = Number(cumulPct) <= 80 || (cumulativeSum - item.qty < totalRejection * 0.8);
+
+                      return (
+                        <div
+                          key={item.code || idx}
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '4px',
+                            padding: '8px 10px',
+                            background: 'var(--bg-surface2)',
+                            borderRadius: '6px',
+                            borderLeft: is80 ? '3px solid var(--clr-error)' : '3px solid var(--clr-border)'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                              <span className="badge badge-error" style={{ fontSize: '10px', padding: '1px 5px', fontWeight: 800 }}>#{idx + 1}</span>
+                              <span style={{ fontWeight: 800, color: 'var(--clr-error)', fontSize: '0.82rem' }}>[{item.code}]</span>
+                              <span style={{ fontSize: '0.78rem', color: 'var(--clr-text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {item.reason}
+                              </span>
+                              {is80 && (
+                                <span className="badge badge-amber" style={{ fontSize: '9px', padding: '0 4px' }}>80/20</span>
+                              )}
+                            </div>
+                            <div style={{ fontWeight: 700, fontSize: '0.78rem', flexShrink: 0 }}>
+                              {item.qty} pcs <span style={{ color: 'var(--clr-text3)', fontSize: '0.72rem' }}>({pct}%)</span>
+                            </div>
+                          </div>
+                          {/* Visual Progress Bar */}
+                          <div style={{ background: 'var(--clr-border)', height: '4px', borderRadius: '2px', overflow: 'hidden' }}>
+                            <div style={{ width: `${Math.min(100, pct)}%`, background: is80 ? 'var(--clr-error)' : 'var(--clr-text3)', height: '100%' }} />
+                          </div>
                         </div>
-                        <div style={{ fontWeight: 700, fontSize: '0.78rem', flexShrink: 0 }}>
-                          {count} pcs <span style={{ color: 'var(--clr-text3)', fontSize: '0.72rem' }}>({pct}%)</span>
+                      );
+                    });
+                  })()}
+                </div>
+              )}
+            </div>
+
+            {/* Downtime Loss Breakdown (Reason & Category Aware) */}
+            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                <h3 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Clock size={17} color="var(--clr-warning)" />
+                  <span>Downtime Loss Breakdown</span>
+                </h3>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${downtimeViewTab === 'reasons' ? 'btn-primary' : 'btn-outline'}`}
+                    style={{ height: '24px', fontSize: '10px', padding: '0 8px' }}
+                    onClick={() => setDowntimeViewTab('reasons')}
+                  >
+                    Reasons ({sortedDowntimeReasons.length})
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${downtimeViewTab === 'categories' ? 'btn-primary' : 'btn-outline'}`}
+                    style={{ height: '24px', fontSize: '10px', padding: '0 8px' }}
+                    onClick={() => setDowntimeViewTab('categories')}
+                  >
+                    Categories ({sortedDowntimeCategories.length})
+                  </button>
+                </div>
+              </div>
+
+              {totalDowntimeMin === 0 ? (
+                <div style={{ color: 'var(--clr-text3)', fontSize: '0.82rem', padding: '24px 0', textAlign: 'center' }}>
+                  No downtime stoppage logged in this submitted report.
+                </div>
+              ) : downtimeViewTab === 'reasons' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {sortedDowntimeReasons.map((item, idx) => {
+                    const pct = totalDowntimeMin > 0 ? ((item.minutes / totalDowntimeMin) * 100).toFixed(1) : 0;
+                    return (
+                      <div
+                        key={item.code || idx}
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '4px',
+                          padding: '8px 10px',
+                          background: 'var(--bg-surface2)',
+                          borderRadius: '6px',
+                          borderLeft: '3px solid var(--clr-warning)'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                            <span className="badge badge-amber" style={{ fontSize: '10px', padding: '1px 5px', fontWeight: 800 }}>#{idx + 1}</span>
+                            <span style={{ fontWeight: 800, color: 'var(--clr-warning)', fontSize: '0.82rem' }}>[{item.code}]</span>
+                            <span style={{ fontSize: '0.78rem', color: 'var(--clr-text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {item.reason}
+                            </span>
+                            <span className="badge badge-gray" style={{ fontSize: '9px', padding: '1px 4px' }}>
+                              {item.category}
+                            </span>
+                          </div>
+                          <div style={{ fontWeight: 700, fontSize: '0.78rem', flexShrink: 0 }}>
+                            {item.minutes}m <span style={{ color: 'var(--clr-text3)', fontSize: '0.72rem' }}>({(item.minutes/60).toFixed(1)}h · {pct}%)</span>
+                          </div>
+                        </div>
+                        {/* Progress bar */}
+                        <div style={{ background: 'var(--clr-border)', height: '4px', borderRadius: '2px', overflow: 'hidden' }}>
+                          <div style={{ width: `${Math.min(100, pct)}%`, background: 'var(--clr-warning)', height: '100%' }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {sortedDowntimeCategories.map(([cat, mins]) => {
+                    const pct = totalDowntimeMin > 0 ? ((mins / totalDowntimeMin) * 100).toFixed(1) : 0;
+                    return (
+                      <div
+                        key={cat}
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '4px',
+                          padding: '8px 10px',
+                          background: 'var(--bg-surface2)',
+                          borderRadius: '6px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '0.78rem', color: 'var(--clr-text)', fontWeight: 600 }}>{cat}</span>
+                          <div style={{ fontWeight: 700, fontSize: '0.78rem' }}>
+                            {mins} min <span style={{ color: 'var(--clr-text3)', fontSize: '0.72rem' }}>({(mins/60).toFixed(1)}h · {pct}%)</span>
+                          </div>
+                        </div>
+                        <div style={{ background: 'var(--clr-border)', height: '4px', borderRadius: '2px', overflow: 'hidden' }}>
+                          <div style={{ width: `${Math.min(100, pct)}%`, background: 'var(--clr-warning)', height: '100%' }} />
                         </div>
                       </div>
                     );
                   })}
                 </div>
               )}
-            </div>
-
-            {/* Downtime Categories */}
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <h3 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Clock size={17} color="var(--clr-warning)" />
-                <span>Downtime Loss Breakdown</span>
-              </h3>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {Object.entries(downtimeByCategory).map(([cat, mins]) => {
-                  const pct = totalDowntimeMin > 0 ? ((mins / totalDowntimeMin) * 100).toFixed(1) : 0;
-                  return (
-                    <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: 'var(--bg-surface2)', borderRadius: '6px' }}>
-                      <span style={{ fontSize: '0.78rem', color: 'var(--clr-text)' }}>{cat}</span>
-                      <div style={{ fontWeight: 700, fontSize: '0.78rem' }}>
-                        {mins} min <span style={{ color: 'var(--clr-text3)', fontSize: '0.72rem' }}>({pct}%)</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
             </div>
           </div>
         </>
@@ -664,6 +910,8 @@ export default function DashboardView({
         <ReportsView
           reports={reports}
           machines={machines}
+          rejectionCodes={rejectionCodes}
+          downtimeCodes={downtimeCodes}
           onSelectReportForViewing={onSelectReportForViewing}
           onDeleteReport={onDeleteReport}
         />

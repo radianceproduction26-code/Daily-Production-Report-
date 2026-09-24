@@ -18,11 +18,11 @@ import { exportShiftReportToExcel, exportShiftReportPDF, sendDailyProductionSumm
 import { getSystemSettings } from '../services/storageService';
 import { useI18n } from '../i18n/I18nContext';
 
-export default function ReportsView({ reports = [], machines = [], onSelectReportForViewing, onDeleteReport }) {
+export default function ReportsView({ reports = [], machines = [], rejectionCodes = [], downtimeCodes = [], onSelectReportForViewing, onDeleteReport }) {
   const { t, language } = useI18n();
-  const [reportType, setReportType] = useState('shift'); // 'shift', 'daily', 'machine', 'rejection', 'downtime', 'material'
-  const [filterDate, setFilterDate] = useState(new Date().toISOString().split('T')[0]);
-  const [selectedMachine, setSelectedMachine] = useState('MC03');
+  const [reportType, setReportType] = useState('shift'); // 'shift', 'daily', 'rejection', 'downtime', 'material'
+  const [filterDate, setFilterDate] = useState('');
+  const [selectedMachine, setSelectedMachine] = useState('ALL');
   const [exportLanguage, setExportLanguage] = useState(language || 'en');
   const [emailingReportId, setEmailingReportId] = useState(null);
   const [emailSuccessResult, setEmailSuccessResult] = useState(null);
@@ -40,9 +40,172 @@ export default function ReportsView({ reports = [], machines = [], onSelectRepor
 
   const filtered = reports.filter(r => {
     const matchDate = filterDate ? r.reportDate === filterDate : true;
-    const matchMachine = selectedMachine === 'ALL' || r.machineNumber === selectedMachine || r.machineNumber === 'MC03' || (r.machineNumber || '').includes('3');
+    const matchMachine = selectedMachine === 'ALL' || r.machineNumber === selectedMachine;
     return matchDate && matchMachine;
   });
+
+  // Calculate detailed analyses across filtered reports
+  // 1. Rejection breakdown
+  const rejectionStats = {};
+  let totalRejectionPieces = 0;
+  let totalGrossProduction = 0;
+  let totalAcceptedPieces = 0;
+  let totalDowntimeMinutes = 0;
+  let totalLumpsAccumulatedKg = 0;
+
+  // 2. Downtime breakdown
+  const downtimeStats = {};
+
+  // 3. Material tracking
+  const materialStats = {};
+
+  // 4. Daily aggregations
+  const dailyStats = {};
+
+  filtered.forEach(rep => {
+    const dateKey = rep.reportDate || 'Unknown Date';
+    totalLumpsAccumulatedKg += Number(rep.lumpsGeneratedKg) || 0;
+
+    if (!dailyStats[dateKey]) {
+      dailyStats[dateKey] = {
+        date: dateKey,
+        shiftsCount: 0,
+        productionQty: 0,
+        acceptedQty: 0,
+        rejectionQty: 0,
+        downtimeMin: 0,
+        lumpsKg: 0,
+        machines: new Set(),
+        supervisors: new Set()
+      };
+    }
+    dailyStats[dateKey].shiftsCount += 1;
+    dailyStats[dateKey].lumpsKg += Number(rep.lumpsGeneratedKg) || 0;
+    if (rep.machineNumber) dailyStats[dateKey].machines.add(rep.machineNumber);
+    if (rep.supervisorName) dailyStats[dateKey].supervisors.add(rep.supervisorName);
+
+    const sessions = rep.mouldSessions || rep.sessions || [];
+    sessions.forEach(sess => {
+      // Material accounting
+      const matGrade = sess.rawMaterialGrade || sess.materialGrade || 'Standard Resin';
+      const matLot = sess.materialBatchNo || sess.batchNumber || sess.rawMaterialLotNo || 'LOT-N/A';
+      const matKey = `${matGrade}__${matLot}`;
+
+      if (!materialStats[matKey]) {
+        materialStats[matKey] = {
+          grade: matGrade,
+          lot: matLot,
+          usedKg: 0,
+          purgedKg: 0,
+          regreedKg: 0,
+          partNumber: sess.partNumber || '—'
+        };
+      }
+      materialStats[matKey].usedKg += Number(sess.rawMaterialKgUsed || sess.materialUsedKg || sess.materialIssuedKg) || 0;
+      materialStats[matKey].purgedKg += Number(sess.purgeKg || sess.lumpsKg) || 0;
+      materialStats[matKey].regreedKg += Number(sess.regrindKg || sess.regrindUsedKg) || 0;
+
+      (sess.entries || []).forEach(e => {
+        const prod = Number(e.productionQty) || 0;
+        const acc = Number(e.acceptedQty) || 0;
+        const rej = Number(e.rejectionQty) || 0;
+        const dt = Number(e.downtimeMinutes) || 0;
+
+        totalGrossProduction += prod;
+        totalAcceptedPieces += acc;
+        totalRejectionPieces += rej;
+        totalDowntimeMinutes += dt;
+
+        dailyStats[dateKey].productionQty += prod;
+        dailyStats[dateKey].acceptedQty += acc;
+        dailyStats[dateKey].rejectionQty += rej;
+        dailyStats[dateKey].downtimeMin += dt;
+
+        // Rejection Breakdown
+        if (Array.isArray(e.rejectionBreakdown) && e.rejectionBreakdown.length > 0) {
+          e.rejectionBreakdown.forEach(rb => {
+            const code = rb.code || 'REJ';
+            const q = Number(rb.qty || rb.quantity) || 0;
+            if (q > 0) {
+              if (!rejectionStats[code]) {
+                const master = rejectionCodes.find(r => r.code === code);
+                rejectionStats[code] = {
+                  code,
+                  reason: rb.reason || rb.description || master?.description || `Defect ${code}`,
+                  qty: 0,
+                  affectedParts: new Set(),
+                  affectedMachines: new Set()
+                };
+              }
+              rejectionStats[code].qty += q;
+              if (sess.partNumber) rejectionStats[code].affectedParts.add(sess.partNumber);
+              if (rep.machineNumber) rejectionStats[code].affectedMachines.add(rep.machineNumber);
+            }
+          });
+        } else if (rej > 0) {
+          const code = e.primaryRejectionCode || 'REJ';
+          if (!rejectionStats[code]) {
+            const master = rejectionCodes.find(r => r.code === code);
+            rejectionStats[code] = {
+              code,
+              reason: e.rejectionReason || master?.description || `Defect ${code}`,
+              qty: 0,
+              affectedParts: new Set(),
+              affectedMachines: new Set()
+            };
+          }
+          rejectionStats[code].qty += rej;
+          if (sess.partNumber) rejectionStats[code].affectedParts.add(sess.partNumber);
+          if (rep.machineNumber) rejectionStats[code].affectedMachines.add(rep.machineNumber);
+        }
+
+        // Downtime Breakdown
+        if (Array.isArray(e.downtimeBreakdown) && e.downtimeBreakdown.length > 0) {
+          e.downtimeBreakdown.forEach(db => {
+            const code = db.code || 'DT';
+            const mins = Number(db.minutes) || 0;
+            if (mins > 0) {
+              if (!downtimeStats[code]) {
+                const master = downtimeCodes.find(d => d.code === code);
+                downtimeStats[code] = {
+                  code,
+                  reason: db.reason || db.description || master?.description || `Stoppage ${code}`,
+                  category: db.category || master?.category || 'General',
+                  minutes: 0,
+                  occurrences: 0,
+                  affectedMachines: new Set()
+                };
+              }
+              downtimeStats[code].minutes += mins;
+              downtimeStats[code].occurrences += 1;
+              if (rep.machineNumber) downtimeStats[code].affectedMachines.add(rep.machineNumber);
+            }
+          });
+        } else if (dt > 0) {
+          const code = e.primaryDowntimeCode || 'DT';
+          if (!downtimeStats[code]) {
+            const master = downtimeCodes.find(d => d.code === code);
+            downtimeStats[code] = {
+              code,
+              reason: e.downtimeReason || master?.description || `Stoppage ${code}`,
+              category: master?.category || 'General',
+              minutes: 0,
+              occurrences: 0,
+              affectedMachines: new Set()
+            };
+          }
+          downtimeStats[code].minutes += dt;
+          downtimeStats[code].occurrences += 1;
+          if (rep.machineNumber) downtimeStats[code].affectedMachines.add(rep.machineNumber);
+        }
+      });
+    });
+  });
+
+  const sortedRejectionList = Object.values(rejectionStats).sort((a, b) => b.qty - a.qty);
+  const sortedDowntimeList = Object.values(downtimeStats).sort((a, b) => b.minutes - a.minutes);
+  const sortedMaterialList = Object.values(materialStats);
+  const sortedDailyList = Object.values(dailyStats).sort((a, b) => b.date.localeCompare(a.date));
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--gap-md)' }}>
@@ -124,7 +287,15 @@ export default function ReportsView({ reports = [], machines = [], onSelectRepor
               value={selectedMachine}
               onChange={(e) => setSelectedMachine(e.target.value)}
             >
-              <option value="MC03">Machine No 3 (MC03)</option>
+              <option value="ALL">All Machines</option>
+              {machines.map(m => (
+                <option key={m.id || m.machineNumber} value={m.machineNumber}>
+                  {m.machineNumber} {m.machineName ? `(${m.machineName})` : ''}
+                </option>
+              ))}
+              {!machines.some(m => m.machineNumber === 'MC03') && (
+                <option value="MC03">Machine No 3 (MC03)</option>
+              )}
             </select>
           </div>
 
@@ -154,8 +325,332 @@ export default function ReportsView({ reports = [], machines = [], onSelectRepor
         </div>
       )}
 
-      {/* MOBILE REPORT CARDS (visible <= 640px via CSS) */}
-      <div className="report-card-list">
+      {/* ============================================================ */}
+      {/* 1. REJECTION REPORT VIEW                                      */}
+      {/* ============================================================ */}
+      {reportType === 'rejection' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div className="kpi-deck">
+            <div className="kpi-card" style={{ borderTop: '3px solid var(--clr-error)' }}>
+              <div className="kpi-title" style={{ color: 'var(--clr-error)' }}>Total Rejection Scrap</div>
+              <div className="kpi-val" style={{ color: 'var(--clr-error)' }}>{totalRejectionPieces.toLocaleString()} pcs</div>
+              <div className="kpi-sub">
+                {totalGrossProduction > 0 ? ((totalRejectionPieces / totalGrossProduction) * 100).toFixed(2) : 0}% of gross production
+              </div>
+            </div>
+            <div className="kpi-card" style={{ borderTop: '3px solid var(--clr-primary)' }}>
+              <div className="kpi-title" style={{ color: 'var(--clr-primary)' }}>Gross Production</div>
+              <div className="kpi-val">{totalGrossProduction.toLocaleString()} pcs</div>
+              <div className="kpi-sub">Accepted: {totalAcceptedPieces.toLocaleString()} pcs</div>
+            </div>
+            <div className="kpi-card" style={{ borderTop: '3px solid var(--clr-warning)' }}>
+              <div className="kpi-title" style={{ color: 'var(--clr-warning)' }}>Active Defect Types</div>
+              <div className="kpi-val">{sortedRejectionList.length}</div>
+              <div className="kpi-sub">Distinct defect reasons captured</div>
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '12px 16px', background: 'var(--bg-surface2)', borderBottom: '1px solid var(--clr-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong style={{ fontSize: '0.9rem' }}>Submitted Rejection Pareto Analysis</strong>
+              <span style={{ fontSize: '0.78rem', color: 'var(--clr-text3)' }}>Sorted by Scrap Quantity</span>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="production-table">
+                <thead>
+                  <tr>
+                    <th>Rank</th>
+                    <th>Defect Code</th>
+                    <th>Rejection Reason</th>
+                    <th>Scrap Qty (pcs)</th>
+                    <th>Share %</th>
+                    <th>Cumulative %</th>
+                    <th>Affected Machines</th>
+                    <th>Affected Parts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedRejectionList.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} style={{ textAlign: 'center', padding: '30px', color: 'var(--clr-text3)' }}>
+                        No rejection defects recorded in the submitted reports.
+                      </td>
+                    </tr>
+                  ) : (
+                    (() => {
+                      let cumSum = 0;
+                      return sortedRejectionList.map((item, idx) => {
+                        cumSum += item.qty;
+                        const pct = totalRejectionPieces > 0 ? ((item.qty / totalRejectionPieces) * 100).toFixed(1) : 0;
+                        const cumPct = totalRejectionPieces > 0 ? ((cumSum / totalRejectionPieces) * 100).toFixed(1) : 0;
+                        const isPareto80 = Number(cumPct) <= 80 || (cumSum - item.qty < totalRejectionPieces * 0.8);
+
+                        return (
+                          <tr key={item.code}>
+                            <td>
+                              <span className="badge badge-error" style={{ fontSize: '11px', padding: '1px 6px', fontWeight: 800 }}>
+                                #{idx + 1}
+                              </span>
+                            </td>
+                            <td>
+                              <strong style={{ color: 'var(--clr-error)' }}>[{item.code}]</strong>
+                              {isPareto80 && <span className="badge badge-amber" style={{ marginLeft: '6px', fontSize: '9px' }}>80/20</span>}
+                            </td>
+                            <td><strong>{item.reason}</strong></td>
+                            <td className="num-cell rejection">{item.qty.toLocaleString()}</td>
+                            <td className="num-cell">{pct}%</td>
+                            <td className="num-cell" style={{ color: 'var(--clr-primary)', fontWeight: 700 }}>{cumPct}%</td>
+                            <td>{Array.from(item.affectedMachines).join(', ') || '—'}</td>
+                            <td>{Array.from(item.affectedParts).join(', ') || '—'}</td>
+                          </tr>
+                        );
+                      });
+                    })()
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* 2. DOWNTIME REPORT VIEW                                      */}
+      {/* ============================================================ */}
+      {reportType === 'downtime' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div className="kpi-deck">
+            <div className="kpi-card" style={{ borderTop: '3px solid var(--clr-warning)' }}>
+              <div className="kpi-title" style={{ color: 'var(--clr-warning)' }}>Total Downtime Loss</div>
+              <div className="kpi-val" style={{ color: 'var(--clr-warning)' }}>{totalDowntimeMinutes} min</div>
+              <div className="kpi-sub">{(totalDowntimeMinutes / 60).toFixed(1)} lost production hours</div>
+            </div>
+            <div className="kpi-card" style={{ borderTop: '3px solid var(--clr-primary)' }}>
+              <div className="kpi-title" style={{ color: 'var(--clr-primary)' }}>Stoppage Incidents</div>
+              <div className="kpi-val">
+                {sortedDowntimeList.reduce((acc, curr) => acc + curr.occurrences, 0)}
+              </div>
+              <div className="kpi-sub">Logged across hourly cycles</div>
+            </div>
+            <div className="kpi-card" style={{ borderTop: '3px solid var(--clr-success)' }}>
+              <div className="kpi-title" style={{ color: 'var(--clr-success)' }}>Unique Stoppage Causes</div>
+              <div className="kpi-val">{sortedDowntimeList.length}</div>
+              <div className="kpi-sub">Distinct downtime reasons</div>
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '12px 16px', background: 'var(--bg-surface2)', borderBottom: '1px solid var(--clr-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong style={{ fontSize: '0.9rem' }}>Submitted Downtime Loss Analysis</strong>
+              <span style={{ fontSize: '0.78rem', color: 'var(--clr-text3)' }}>Ranked by Stoppage Duration</span>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="production-table">
+                <thead>
+                  <tr>
+                    <th>Rank</th>
+                    <th>Code</th>
+                    <th>Stoppage Reason</th>
+                    <th>Category</th>
+                    <th>Incidents</th>
+                    <th>Lost Minutes</th>
+                    <th>Lost Hours</th>
+                    <th>Share %</th>
+                    <th>Affected Machines</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedDowntimeList.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} style={{ textAlign: 'center', padding: '30px', color: 'var(--clr-text3)' }}>
+                        No downtime stoppages recorded in the submitted reports.
+                      </td>
+                    </tr>
+                  ) : (
+                    sortedDowntimeList.map((item, idx) => {
+                      const pct = totalDowntimeMinutes > 0 ? ((item.minutes / totalDowntimeMinutes) * 100).toFixed(1) : 0;
+                      return (
+                        <tr key={item.code}>
+                          <td>
+                            <span className="badge badge-amber" style={{ fontSize: '11px', padding: '1px 6px', fontWeight: 800 }}>
+                              #{idx + 1}
+                            </span>
+                          </td>
+                          <td><strong style={{ color: 'var(--clr-warning)' }}>[{item.code}]</strong></td>
+                          <td><strong>{item.reason}</strong></td>
+                          <td><span className="badge badge-gray">{item.category}</span></td>
+                          <td className="num-cell">{item.occurrences}</td>
+                          <td className="num-cell downtime">{item.minutes} min</td>
+                          <td className="num-cell">{(item.minutes / 60).toFixed(1)} h</td>
+                          <td className="num-cell" style={{ fontWeight: 700 }}>{pct}%</td>
+                          <td>{Array.from(item.affectedMachines).join(', ') || '—'}</td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* 3. MATERIAL ACCOUNTING & PURGE LUMPS REPORT                  */}
+      {/* ============================================================ */}
+      {reportType === 'material' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div className="kpi-deck">
+            <div className="kpi-card" style={{ borderTop: '3px solid var(--clr-primary)' }}>
+              <div className="kpi-title" style={{ color: 'var(--clr-primary)' }}>Total Material Issued / Used</div>
+              <div className="kpi-val">
+                {sortedMaterialList.reduce((acc, curr) => acc + curr.usedKg, 0).toFixed(1)} kg
+              </div>
+              <div className="kpi-sub">Across active resin grades</div>
+            </div>
+            <div className="kpi-card" style={{ borderTop: '3px solid var(--clr-warning)' }}>
+              <div className="kpi-title" style={{ color: 'var(--clr-warning)' }}>Total Lumps Generated</div>
+              <div className="kpi-val" style={{ color: 'var(--clr-warning)' }}>{totalLumpsAccumulatedKg.toFixed(1)} kg</div>
+              <div className="kpi-sub">Purge lumps reported by supervisors</div>
+            </div>
+            <div className="kpi-card" style={{ borderTop: '3px solid var(--clr-success)' }}>
+              <div className="kpi-title" style={{ color: 'var(--clr-success)' }}>Regrind Re-utilized</div>
+              <div className="kpi-val">
+                {sortedMaterialList.reduce((acc, curr) => acc + curr.regreedKg, 0).toFixed(1)} kg
+              </div>
+              <div className="kpi-sub">Recycled back into process</div>
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '12px 16px', background: 'var(--bg-surface2)', borderBottom: '1px solid var(--clr-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong style={{ fontSize: '0.9rem' }}>Submitted Raw Material & Lumps Summary</strong>
+              <span style={{ fontSize: '0.78rem', color: 'var(--clr-text3)' }}>Batch & Grade Traceability</span>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="production-table">
+                <thead>
+                  <tr>
+                    <th>Grade / Resin</th>
+                    <th>Batch / Lot No</th>
+                    <th>Associated Part</th>
+                    <th>Material Used (kg)</th>
+                    <th>Purge Waste (kg)</th>
+                    <th>Regrind (kg)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedMaterialList.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign: 'center', padding: '30px', color: 'var(--clr-text3)' }}>
+                        No material batches recorded in current shift reports.
+                      </td>
+                    </tr>
+                  ) : (
+                    sortedMaterialList.map((item, idx) => (
+                      <tr key={idx}>
+                        <td><strong>{item.grade}</strong></td>
+                        <td><span style={{ fontFamily: 'var(--font-mono)' }}>{item.lot}</span></td>
+                        <td>{item.partNumber}</td>
+                        <td className="num-cell">{item.usedKg.toFixed(1)} kg</td>
+                        <td className="num-cell" style={{ color: 'var(--clr-warning)', fontWeight: 700 }}>{item.purgedKg.toFixed(1)} kg</td>
+                        <td className="num-cell">{item.regreedKg.toFixed(1)} kg</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* 4. DAILY SUMMARY REPORT VIEW                                 */}
+      {/* ============================================================ */}
+      {reportType === 'daily' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div className="kpi-deck">
+            <div className="kpi-card" style={{ borderTop: '3px solid var(--clr-primary)' }}>
+              <div className="kpi-title" style={{ color: 'var(--clr-primary)' }}>Daily Production (Total)</div>
+              <div className="kpi-val">{totalGrossProduction.toLocaleString()} pcs</div>
+              <div className="kpi-sub">Across {sortedDailyList.length} production dates</div>
+            </div>
+            <div className="kpi-card" style={{ borderTop: '3px solid var(--clr-success)' }}>
+              <div className="kpi-title" style={{ color: 'var(--clr-success)' }}>Total Accepted</div>
+              <div className="kpi-val" style={{ color: 'var(--clr-success)' }}>{totalAcceptedPieces.toLocaleString()} pcs</div>
+              <div className="kpi-sub">
+                {totalGrossProduction > 0 ? ((totalAcceptedPieces / totalGrossProduction) * 100).toFixed(1) : 100}% Quality Yield
+              </div>
+            </div>
+            <div className="kpi-card" style={{ borderTop: '3px solid var(--clr-warning)' }}>
+              <div className="kpi-title" style={{ color: 'var(--clr-warning)' }}>Total Lumps Purged</div>
+              <div className="kpi-val" style={{ color: 'var(--clr-warning)' }}>{totalLumpsAccumulatedKg.toFixed(1)} kg</div>
+              <div className="kpi-sub">Total downtime: {totalDowntimeMinutes} min</div>
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '12px 16px', background: 'var(--bg-surface2)', borderBottom: '1px solid var(--clr-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong style={{ fontSize: '0.9rem' }}>Submitted Daily Production Summaries</strong>
+              <span style={{ fontSize: '0.78rem', color: 'var(--clr-text3)' }}>Aggregated per Production Day</span>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="production-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Shifts</th>
+                    <th>Machines</th>
+                    <th>Gross Production</th>
+                    <th>Accepted (pcs)</th>
+                    <th>Rejections (pcs)</th>
+                    <th>Rej Rate %</th>
+                    <th>Downtime (min)</th>
+                    <th>Lumps (kg)</th>
+                    <th>Supervisors</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedDailyList.length === 0 ? (
+                    <tr>
+                      <td colSpan={10} style={{ textAlign: 'center', padding: '30px', color: 'var(--clr-text3)' }}>
+                        No daily production records found for current filters.
+                      </td>
+                    </tr>
+                  ) : (
+                    sortedDailyList.map(item => {
+                      const rejRate = item.productionQty > 0 ? ((item.rejectionQty / item.productionQty) * 100).toFixed(2) : '0.00';
+                      return (
+                        <tr key={item.date}>
+                          <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{item.date}</td>
+                          <td><span className="badge badge-primary">{item.shiftsCount} Shifts</span></td>
+                          <td>{Array.from(item.machines).join(', ') || '—'}</td>
+                          <td className="num-cell" style={{ fontWeight: 700 }}>{item.productionQty.toLocaleString()}</td>
+                          <td className="num-cell accepted">{item.acceptedQty.toLocaleString()}</td>
+                          <td className="num-cell rejection">{item.rejectionQty.toLocaleString()}</td>
+                          <td className="num-cell" style={{ color: 'var(--clr-error)' }}>{rejRate}%</td>
+                          <td className="num-cell downtime">{item.downtimeMin} min</td>
+                          <td className="num-cell" style={{ color: 'var(--clr-warning)', fontWeight: 700 }}>{item.lumpsKg.toFixed(1)} kg</td>
+                          <td>{Array.from(item.supervisors).join(', ') || '—'}</td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* 5. SHIFT REPORTS TABLE & MOBILE CARDS (DEFAULT)              */}
+      {/* ============================================================ */}
+      {reportType === 'shift' && (
+        <>
+          {/* MOBILE REPORT CARDS (visible <= 640px via CSS) */}
+          <div className="report-card-list">
         {filtered.length === 0 ? (
           <div className="card text-center" style={{ padding: '32px 16px', color: 'var(--clr-text3)' }}>
             No shift reports match current filters.
@@ -407,6 +902,8 @@ export default function ReportsView({ reports = [], machines = [], onSelectRepor
           </tbody>
         </table>
       </div>
+      </>
+      )}
 
     </div>
   );
