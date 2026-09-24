@@ -427,6 +427,7 @@ export default function PartMasterView({
       <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '4px', WebkitOverflowScrolling: 'touch' }}>
         {[
           { id: 'parts', label: `Parts (${parts.length})`, icon: Layers },
+          { id: 'machines', label: `Machines (${machines.length})`, icon: Wrench },
           { id: 'rejections', label: `Rejections (${rejections.length})`, icon: AlertOctagon },
           { id: 'downtimes', label: `Downtime (${downtimes.length})`, icon: Clock },
           { id: 'operators', label: `Operators (${operators.length})`, icon: Users },
@@ -1165,6 +1166,107 @@ export default function PartMasterView({
                 <span className="badge badge-success">MANDATORY ACTIVE</span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB: MACHINE MASTER (MC03, MC04, MC05, MC06) ── */}
+      {activeTab === 'machines' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div className="card" style={{ padding: '14px', background: 'var(--clr-primary-lt)', border: '1px solid #7dd3fc' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--clr-primary)', fontWeight: 800, fontSize: '0.92rem' }}>
+              <Wrench size={18} />
+              <span>Plant Injection Moulding Machines ({machines.length} Lines)</span>
+            </div>
+            <p style={{ fontSize: '0.8rem', color: 'var(--clr-text2)', margin: '4px 0 0 0', lineHeight: 1.4 }}>
+              Active injection machines supporting parallel shift production across Machine No 3, 4, 5, and 6.
+            </p>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
+            {machines.map(m => {
+              const mappedParts = mappings.filter(
+                map => (map.machineCode || map.machineNumber) === m.machineNumber
+              );
+
+              return (
+                <div
+                  key={m.id || m.machineNumber}
+                  className="card"
+                  style={{
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px',
+                    borderLeft: '4px solid var(--clr-primary)'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: '1.05rem',
+                        fontWeight: 900,
+                        color: 'var(--clr-primary)',
+                        background: 'var(--bg-surface2)',
+                        padding: '3px 8px',
+                        borderRadius: '6px',
+                        border: '1px solid var(--clr-border)'
+                      }}>
+                        {m.machineNumber}
+                      </span>
+                      <strong style={{ fontSize: '0.95rem', color: 'var(--clr-text)' }}>
+                        {m.machineName || `${m.tonnage || m.capacityTon || 350}T`}
+                      </strong>
+                    </div>
+                    <span className="badge badge-success">ACTIVE</span>
+                  </div>
+
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gap: '6px',
+                    background: 'var(--bg-surface2)',
+                    padding: '8px',
+                    borderRadius: '8px',
+                    fontSize: '0.74rem'
+                  }}>
+                    <div>
+                      <span style={{ color: 'var(--clr-text4)', display: 'block', fontSize: '0.62rem', textTransform: 'uppercase' }}>Tonnage</span>
+                      <strong>{m.tonnage || m.capacityTon || '—'} Ton</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--clr-text4)', display: 'block', fontSize: '0.62rem', textTransform: 'uppercase' }}>Make</span>
+                      <strong>{m.make || 'Milacron'}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--clr-text4)', display: 'block', fontSize: '0.62rem', textTransform: 'uppercase' }}>Model</span>
+                      <strong>{m.model || `${m.tonnage || 350}T`}</strong>
+                    </div>
+                  </div>
+
+                  {/* Mapped Parts Preview */}
+                  <div style={{ borderTop: '1px solid var(--clr-border)', paddingTop: '8px' }}>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--clr-text3)', fontWeight: 700, textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
+                      Approved Tools / Parts ({mappedParts.length > 0 ? mappedParts.length : 'All active parts'})
+                    </span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                      {mappedParts.length > 0 ? (
+                        mappedParts.map(mp => (
+                          <span key={mp.id || mp.partCode} className="badge badge-primary" style={{ fontSize: '0.65rem' }}>
+                            {mp.partCode || mp.partNumber}
+                          </span>
+                        ))
+                      ) : (
+                        <span style={{ fontSize: '0.72rem', color: 'var(--clr-text3)' }}>
+                          Available for all part runs
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

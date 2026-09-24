@@ -110,10 +110,10 @@ export async function downloadUnifiedPartMasterTemplate() {
       'Part Number': '5036677',
       'Part Name': 'Terminal Cover Plate',
       'Customer Name': 'Bosch Automotive',
-      'Machine Number': 'MC03',
-      'Machine Name': 'Milacron 450T',
-      'Machine Make': 'Milacron Magna T-450',
-      'Machine Tonnage': 450,
+      'Machine Number': 'MC04',
+      'Machine Name': 'Milacron 350T',
+      'Machine Make': 'Milacron Magna T-350',
+      'Machine Tonnage': 350,
       'Material Grade': 'Nylon 6 30% GF',
       'Part Weight': 28.0,
       'Runner Weight': 4.0,
@@ -125,14 +125,29 @@ export async function downloadUnifiedPartMasterTemplate() {
       'Part Number': '5012394',
       'Part Name': 'Switch Housing Bracket',
       'Customer Name': 'Tata Motors',
-      'Machine Number': 'MC03',
-      'Machine Name': 'Milacron 450T',
-      'Machine Make': 'Milacron Magna T-450',
-      'Machine Tonnage': 450,
+      'Machine Number': 'MC05',
+      'Machine Name': 'Milacron 250T',
+      'Machine Make': 'Milacron Magna T-250',
+      'Machine Tonnage': 250,
       'Material Grade': 'ABS Hi-Impact AF312',
       'Part Weight': 35.0,
       'Runner Weight': 4.5,
       'Cycle Time': 25.0,
+      'Cavity Count': 2,
+      'Status': 'active'
+    },
+    {
+      'Part Number': 'F53200000A',
+      'Part Name': 'Front Bezel Enclosure',
+      'Customer Name': 'Schneider Electric',
+      'Machine Number': 'MC06',
+      'Machine Name': 'Milacron 180T',
+      'Machine Make': 'Milacron Magna T-180',
+      'Machine Tonnage': 180,
+      'Material Grade': 'PP Copolymer 575P',
+      'Part Weight': 42.5,
+      'Runner Weight': 5.2,
+      'Cycle Time': 20.0,
       'Cavity Count': 2,
       'Status': 'active'
     }
@@ -702,7 +717,7 @@ export function exportAllMasterDataBackup({ machines = [], parts = [], mappings 
 }
 
 /**
- * Verifies MC03 pilot conditions for production readiness.
+ * Verifies plant production conditions for production readiness across machines (MC03, MC04, MC05, MC06).
  */
 export function checkPilotReadiness({ machines = [], parts = [], mappings = [], usersList = [] }) {
   const missing = [];
@@ -714,25 +729,11 @@ export function checkPilotReadiness({ machines = [], parts = [], mappings = [], 
   if (!parts || parts.length === 0) {
     missing.push('Part Master');
   }
-  if (!mappings || mappings.length === 0) {
-    missing.push('Machine-Part Mapping');
-  }
 
-  // Pilot specific checks:
-  const hasMC03 = machines.some(m => (m.machineNumber || '').toUpperCase() === 'MC03');
-  if (!hasMC03) {
-    missing.push('Pilot Machine MC03');
-  }
-
-  const hasLokesh = usersList.some(u => (u.fullName || '').includes('Lokesh'));
-  const hasAkshay = usersList.some(u => (u.fullName || '').includes('Akshay'));
-  if (!hasLokesh || !hasAkshay) {
-    missing.push('Pilot Supervisors (Mr. Lokesh & Mr. Akshay)');
-  }
-
-  const mc03Mappings = mappings.filter(m => (m.machineCode || m.machineNumber || '').toUpperCase() === 'MC03');
-  if (mc03Mappings.length === 0) {
-    missing.push('Mapped Parts for MC03');
+  // Fleet check: at least one active machine from MC03, MC04, MC05, MC06
+  const hasFleetMachine = machines.some(m => ['MC03', 'MC04', 'MC05', 'MC06'].includes((m.machineNumber || m.machineCode || '').toUpperCase()));
+  if (!hasFleetMachine) {
+    missing.push('Production Machines (MC03, MC04, MC05, MC06)');
   }
 
   return {

@@ -14,11 +14,102 @@ export const INITIAL_OPERATORS = [
   { id: 'op-06', operatorName: 'Ramkesh', employeeCode: 'EMP-106', status: 'active' }
 ];
 
-export const INITIAL_MACHINES = [];
+export const INITIAL_MACHINES = [
+  {
+    id: 'm-mc-03',
+    machineNumber: 'MC03',
+    machineCode: 'MC03',
+    machineName: 'Milacron 450T',
+    make: 'Milacron',
+    model: '450T',
+    capacityTon: 450,
+    tonnage: 450,
+    status: 'active'
+  },
+  {
+    id: 'm-mc-04',
+    machineNumber: 'MC04',
+    machineCode: 'MC04',
+    machineName: 'Milacron 350T',
+    make: 'Milacron',
+    model: '350T',
+    capacityTon: 350,
+    tonnage: 350,
+    status: 'active'
+  },
+  {
+    id: 'm-mc-05',
+    machineNumber: 'MC05',
+    machineCode: 'MC05',
+    machineName: 'Milacron 250T',
+    make: 'Milacron',
+    model: '250T',
+    capacityTon: 250,
+    tonnage: 250,
+    status: 'active'
+  },
+  {
+    id: 'm-mc-06',
+    machineNumber: 'MC06',
+    machineCode: 'MC06',
+    machineName: 'Milacron 180T',
+    make: 'Milacron',
+    model: '180T',
+    capacityTon: 180,
+    tonnage: 180,
+    status: 'active'
+  }
+];
 
 export const INITIAL_MOULDS = [];
 
-export const INITIAL_PARTS = [];
+export const INITIAL_PARTS = [
+  {
+    id: 'part-01',
+    partNumber: 'F53200000A',
+    partCode: 'F53200000A',
+    partName: 'Front Bezel Enclosure',
+    customer: 'Schneider Electric',
+    standardCycleTimeSeconds: 20.0,
+    actualCycleTimeSeconds: 20.0,
+    cycleTime: 20.0,
+    cavityCount: 2,
+    rawMaterialGrade: 'PP Copolymer 575P',
+    partWeightGrams: 42.5,
+    runnerWeightGrams: 5.2,
+    status: 'active'
+  },
+  {
+    id: 'part-02',
+    partNumber: '5036677',
+    partCode: '5036677',
+    partName: 'Terminal Cover Plate',
+    customer: 'Bosch Automotive',
+    standardCycleTimeSeconds: 15.0,
+    actualCycleTimeSeconds: 15.0,
+    cycleTime: 15.0,
+    cavityCount: 4,
+    rawMaterialGrade: 'Nylon 6 30% GF',
+    partWeightGrams: 28.0,
+    runnerWeightGrams: 4.0,
+    status: 'active'
+  },
+  {
+    id: 'part-03',
+    partNumber: '5012394',
+    partCode: '5012394',
+    partName: 'Switch Housing Bracket',
+    customer: 'Tata Motors',
+    standardCycleTimeSeconds: 25.0,
+    actualCycleTimeSeconds: 25.0,
+    cycleTime: 25.0,
+    cavityCount: 2,
+    rawMaterialGrade: 'ABS Hi-Impact AF312',
+    partWeightGrams: 35.0,
+    runnerWeightGrams: 4.5,
+    status: 'active'
+  }
+];
 
 
 export const INITIAL_MATERIALS = [
@@ -92,9 +183,25 @@ export const INITIAL_MATERIALS = [
 
 export const INITIAL_WORK_ORDERS = [];
 
-// Machine-Part Mapping (MC03 -> Part Codes)
+// Machine-Part Mapping (MC03, MC04, MC05, MC06 -> Part Codes)
 // Future-ready structure: Machine Code | Mould Number | Part Code | Approved to Run
-export const INITIAL_MACHINE_PART_MAPPINGS = [];
+export const INITIAL_MACHINE_PART_MAPPINGS = [
+  { id: 'map-01', machineCode: 'MC03', machineNumber: 'MC03', partCode: 'F53200000A', partNumber: 'F53200000A', isApproved: true, status: 'active' },
+  { id: 'map-02', machineCode: 'MC03', machineNumber: 'MC03', partCode: '5036677', partNumber: '5036677', isApproved: true, status: 'active' },
+  { id: 'map-03', machineCode: 'MC03', machineNumber: 'MC03', partCode: '5012394', partNumber: '5012394', isApproved: true, status: 'active' },
+
+  { id: 'map-04', machineCode: 'MC04', machineNumber: 'MC04', partCode: 'F53200000A', partNumber: 'F53200000A', isApproved: true, status: 'active' },
+  { id: 'map-05', machineCode: 'MC04', machineNumber: 'MC04', partCode: '5036677', partNumber: '5036677', isApproved: true, status: 'active' },
+  { id: 'map-06', machineCode: 'MC04', machineNumber: 'MC04', partCode: '5012394', partNumber: '5012394', isApproved: true, status: 'active' },
+
+  { id: 'map-07', machineCode: 'MC05', machineNumber: 'MC05', partCode: 'F53200000A', partNumber: 'F53200000A', isApproved: true, status: 'active' },
+  { id: 'map-08', machineCode: 'MC05', machineNumber: 'MC05', partCode: '5036677', partNumber: '5036677', isApproved: true, status: 'active' },
+  { id: 'map-09', machineCode: 'MC05', machineNumber: 'MC05', partCode: '5012394', partNumber: '5012394', isApproved: true, status: 'active' },
+
+  { id: 'map-10', machineCode: 'MC06', machineNumber: 'MC06', partCode: 'F53200000A', partNumber: 'F53200000A', isApproved: true, status: 'active' },
+  { id: 'map-11', machineCode: 'MC06', machineNumber: 'MC06', partCode: '5036677', partNumber: '5036677', isApproved: true, status: 'active' },
+  { id: 'map-12', machineCode: 'MC06', machineNumber: 'MC06', partCode: '5012394', partNumber: '5012394', isApproved: true, status: 'active' }
+];
 
 // Supervisor Master for Pilot
 export const SUPERVISORS = [

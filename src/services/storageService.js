@@ -142,25 +142,58 @@ export function initializeStorage() {
   // Always overwrite operators to keep names current (force-update on every app load)
   localStorage.setItem(KEYS.OPERATORS, JSON.stringify(INITIAL_OPERATORS));
 
-  // Auto-migrate pilot machine MC03 to Milacron 450T
+  // Auto-migrate and ensure production machines MC03, MC04, MC05, MC06 are initialized
   try {
     const rawMachines = localStorage.getItem(KEYS.MACHINES);
-    if (rawMachines) {
-      const parsed = JSON.parse(rawMachines);
-      let updated = false;
-      parsed.forEach(m => {
-        if (m.machineNumber === 'MC03' || m.machineCode === 'MC03' || m.id === 'mc-03') {
-          m.machineName = 'Milacron 450T';
-          m.make = 'Milacron';
-          m.model = '450T';
-          m.capacityTon = 450;
-          m.tonnage = 450;
-          updated = true;
-        }
-      });
-      if (updated) {
-        localStorage.setItem(KEYS.MACHINES, JSON.stringify(parsed));
+    const parsed = rawMachines ? JSON.parse(rawMachines) : [];
+    const standardFleet = [
+      { id: 'm-mc-03', machineNumber: 'MC03', machineCode: 'MC03', machineName: 'Milacron 450T', make: 'Milacron', model: '450T', capacityTon: 450, tonnage: 450, status: 'active' },
+      { id: 'm-mc-04', machineNumber: 'MC04', machineCode: 'MC04', machineName: 'Milacron 350T', make: 'Milacron', model: '350T', capacityTon: 350, tonnage: 350, status: 'active' },
+      { id: 'm-mc-05', machineNumber: 'MC05', machineCode: 'MC05', machineName: 'Milacron 250T', make: 'Milacron', model: '250T', capacityTon: 250, tonnage: 250, status: 'active' },
+      { id: 'm-mc-06', machineNumber: 'MC06', machineCode: 'MC06', machineName: 'Milacron 180T', make: 'Milacron', model: '180T', capacityTon: 180, tonnage: 180, status: 'active' }
+    ];
+    let updated = false;
+
+    // Standardize existing machines
+    parsed.forEach(m => {
+      if (m.machineNumber === 'MC03' || m.machineCode === 'MC03' || m.id === 'mc-03') {
+        m.machineName = 'Milacron 450T';
+        m.make = 'Milacron';
+        m.model = '450T';
+        m.capacityTon = 450;
+        m.tonnage = 450;
+        updated = true;
       }
+      if (m.machineNumber === 'MC04' || m.machineCode === 'MC04' || m.id === 'mc-04') {
+        m.machineName = m.machineName || 'Milacron 350T';
+        m.capacityTon = m.capacityTon || 350;
+        m.tonnage = m.tonnage || 350;
+        updated = true;
+      }
+      if (m.machineNumber === 'MC05' || m.machineCode === 'MC05' || m.id === 'mc-05') {
+        m.machineName = m.machineName || 'Milacron 250T';
+        m.capacityTon = m.capacityTon || 250;
+        m.tonnage = m.tonnage || 250;
+        updated = true;
+      }
+      if (m.machineNumber === 'MC06' || m.machineCode === 'MC06' || m.id === 'mc-06') {
+        m.machineName = m.machineName || 'Milacron 180T';
+        m.capacityTon = m.capacityTon || 180;
+        m.tonnage = m.tonnage || 180;
+        updated = true;
+      }
+    });
+
+    // Append any missing standard machines
+    standardFleet.forEach(sf => {
+      if (!parsed.some(m => m.machineNumber === sf.machineNumber || m.machineCode === sf.machineNumber)) {
+        parsed.push(sf);
+        updated = true;
+      }
+    });
+
+    if (updated || parsed.length === 0) {
+      localStorage.setItem(KEYS.MACHINES, JSON.stringify(parsed.length > 0 ? parsed : standardFleet));
     }
   } catch (e) {}
 
@@ -692,21 +725,45 @@ export function createDemoShiftReport() {
 export function getMachines() {
   if (typeof localStorage === 'undefined') return [];
   const data = localStorage.getItem(KEYS.MACHINES);
-  const list = data ? JSON.parse(data) : [];
-  return list.map(m => {
-    if (m.machineNumber === 'MC03' || m.machineCode === 'MC03' || m.id === 'mc-03') {
-      return {
-        ...m,
-        machineNumber: 'MC03',
-        machineName: 'Milacron 450T',
-        make: 'Milacron',
-        model: '450T',
-        capacityTon: 450,
-        tonnage: 450
-      };
-    }
-    return m;
-  });
+  let list = data ? JSON.parse(data) : [];
+
+  const standardFleet = [
+    { id: 'm-mc-03', machineNumber: 'MC03', machineCode: 'MC03', machineName: 'Milacron 450T', make: 'Milacron', model: '450T', capacityTon: 450, tonnage: 450, status: 'active' },
+    { id: 'm-mc-04', machineNumber: 'MC04', machineCode: 'MC04', machineName: 'Milacron 350T', make: 'Milacron', model: '350T', capacityTon: 350, tonnage: 350, status: 'active' },
+    { id: 'm-mc-05', machineNumber: 'MC05', machineCode: 'MC05', machineName: 'Milacron 250T', make: 'Milacron', model: '250T', capacityTon: 250, tonnage: 250, status: 'active' },
+    { id: 'm-mc-06', machineNumber: 'MC06', machineCode: 'MC06', machineName: 'Milacron 180T', make: 'Milacron', model: '180T', capacityTon: 180, tonnage: 180, status: 'active' }
+  ];
+
+  if (!list || list.length === 0) {
+    list = [...standardFleet];
+  } else {
+    list = list.map(m => {
+      const mcCode = m.machineNumber || m.machineCode;
+      const stdMatch = standardFleet.find(sf => sf.machineNumber === mcCode);
+      if (stdMatch) {
+        return {
+          ...m,
+          machineNumber: stdMatch.machineNumber,
+          machineCode: stdMatch.machineCode,
+          machineName: m.machineName && m.machineName !== 'Standard IMM' ? m.machineName : stdMatch.machineName,
+          make: m.make || stdMatch.make,
+          model: m.model || stdMatch.model,
+          capacityTon: m.capacityTon || stdMatch.capacityTon,
+          tonnage: m.tonnage || stdMatch.tonnage,
+          status: m.status || 'active'
+        };
+      }
+      return m;
+    });
+
+    standardFleet.forEach(sf => {
+      if (!list.some(m => (m.machineNumber || m.machineCode) === sf.machineNumber)) {
+        list.push(sf);
+      }
+    });
+  }
+
+  return list;
 }
 export function syncMasterDataToCloudBackground() {
   if (typeof window !== 'undefined') {
@@ -1101,14 +1158,40 @@ export function setActiveReportId(id) {
   localStorage.setItem(KEYS.ACTIVE_REPORT_ID, id);
 }
 
-export function getActiveReport() {
-  const id = getActiveReportId();
+export function getActiveReport(machineNumber = null) {
   const reports = getShiftReports();
+  if (machineNumber) {
+    // 1. Look for active/draft report for this machine
+    const draft = reports.find(r => r.machineNumber === machineNumber && (r.status === 'draft' || r.status === 'active' || r.status === 'unlocked'));
+    if (draft) return draft;
+    // 2. Otherwise look for latest report for this machine
+    const anyRep = reports.find(r => r.machineNumber === machineNumber);
+    if (anyRep) return anyRep;
+    return null;
+  }
+
+  const id = getActiveReportId();
   if (id && !isReportDeleted(id)) {
     const found = reports.find(r => r.id === id);
     if (found) return found;
   }
   return reports[0] || null;
+}
+
+export function getActiveReportForMachine(machineNumber) {
+  return getActiveReport(machineNumber);
+}
+
+export function getActiveReportsByMachine() {
+  const reports = getShiftReports();
+  const machines = getMachines();
+  const map = {};
+  machines.forEach(m => {
+    const num = m.machineNumber;
+    const running = reports.find(r => r.machineNumber === num && (r.status === 'draft' || r.status === 'active' || r.status === 'unlocked'));
+    map[num] = running || reports.find(r => r.machineNumber === num) || null;
+  });
+  return map;
 }
 
 export function saveActiveReport(updatedReport) {

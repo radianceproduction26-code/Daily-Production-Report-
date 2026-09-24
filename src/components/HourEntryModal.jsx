@@ -162,16 +162,13 @@ export default function HourEntryModal({
     setCurrentSession(activeSession);
   }, [activeSession?.id, activeSession?.mouldNumber]);
 
-  // 3 pilot moulds assigned to MC03
-  const pilotPartCodes = ['F53200000A', '5036677', '5012394'];
+  // Available tools/moulds from partsList
   const availableMoulds = React.useMemo(() => {
-    const list = (partsList && partsList.length > 0) ? partsList : [];
-    const filtered = list.filter(p => pilotPartCodes.includes(p.partCode || p.partNumber));
-    if (filtered.length > 0) return filtered;
+    if (partsList && partsList.length > 0) return partsList;
     return [
-      { id: 'part-mc03-1', partNumber: 'F53200000A', partCode: 'F53200000A', partName: 'CAP OIL FILLER', customer: 'Maruti Suzuki', standardCycleTimeSeconds: 20, cavityCount: 2, rawMaterialGrade: 'PPCP' },
-      { id: 'part-mc03-2', partNumber: '5036677', partCode: '5036677', partName: 'BEARING HOUSING', customer: 'Tata Motors', standardCycleTimeSeconds: 15, cavityCount: 4, rawMaterialGrade: 'PPCP' },
-      { id: 'part-mc03-3', partNumber: '5012394', partCode: '5012394', partName: 'FLANGE COMPONENT', customer: 'Mahindra', standardCycleTimeSeconds: 18, cavityCount: 2, rawMaterialGrade: 'PPCP' }
+      { id: 'part-mc03-1', partNumber: 'F53200000A', partCode: 'F53200000A', partName: 'Front Bezel Enclosure', customer: 'Schneider Electric', standardCycleTimeSeconds: 20, cavityCount: 2, rawMaterialGrade: 'PPCP' },
+      { id: 'part-mc03-2', partNumber: '5036677', partCode: '5036677', partName: 'Terminal Cover Plate', customer: 'Bosch Automotive', standardCycleTimeSeconds: 15, cavityCount: 4, rawMaterialGrade: 'Nylon 6' },
+      { id: 'part-mc03-3', partNumber: '5012394', partCode: '5012394', partName: 'Switch Housing Bracket', customer: 'Tata Motors', standardCycleTimeSeconds: 25, cavityCount: 2, rawMaterialGrade: 'ABS' }
     ];
   }, [partsList]);
 

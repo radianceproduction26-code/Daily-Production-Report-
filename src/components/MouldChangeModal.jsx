@@ -36,16 +36,18 @@ export default function MouldChangeModal({
   );
   const [endReason, setEndReason] = useState('Production order target achieved');
 
-  // Filter available pilot parts excluding the currently running part (only parts mapped to MC03)
-  const pilotPartCodes = ['F53200000A', '5036677', '5012394'];
-  const eligibleParts = partsList.filter(p => 
-    p.status === 'active' && 
-    pilotPartCodes.includes(p.partCode || p.partNumber) &&
+  // Filter available parts excluding the currently running part
+  const eligibleParts = (partsList || []).filter(p => 
+    p.status !== 'inactive' &&
     (p.partCode !== activeSession.partNumber && p.partNumber !== activeSession.partNumber)
   );
   const displayParts = eligibleParts.length > 0 
     ? eligibleParts 
-    : partsList.filter(p => pilotPartCodes.includes(p.partCode || p.partNumber));
+    : (partsList && partsList.length > 0 ? partsList : [
+        { id: 'part-01', partNumber: 'F53200000A', partCode: 'F53200000A', partName: 'Front Bezel Enclosure', customer: 'Schneider Electric', standardCycleTimeSeconds: 20.0, cavityCount: 2, rawMaterialGrade: 'PPCP' },
+        { id: 'part-02', partNumber: '5036677', partCode: '5036677', partName: 'Terminal Cover Plate', customer: 'Bosch Automotive', standardCycleTimeSeconds: 15.0, cavityCount: 4, rawMaterialGrade: 'Nylon 6' },
+        { id: 'part-03', partNumber: '5012394', partCode: '5012394', partName: 'Switch Housing Bracket', customer: 'Tata Motors', standardCycleTimeSeconds: 25.0, cavityCount: 2, rawMaterialGrade: 'ABS' }
+      ]);
 
   const operatorsList = React.useMemo(() => {
     try {

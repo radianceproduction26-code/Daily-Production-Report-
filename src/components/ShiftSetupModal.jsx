@@ -24,21 +24,35 @@ export default function ShiftSetupModal({
   mouldsList = [],
   partsList = [],
   currentUser,
-  onCreateShift
+  onCreateShift,
+  initialMachineNumber = 'MC03'
 }) {
   const { t, language } = useI18n();
   if (!isOpen) return null;
 
-  // STEP 2: Pilot Machine Locked to MC03
-  const pilotPartCodes = ['F53200000A', '5036677', '5012394'];
-  const pilotMachine = machinesList.find(m => m.machineNumber === 'MC03') || {
-    id: 'mc-03',
-    machineNumber: 'MC03',
-    machineName: 'Milacron 450T',
-    capacityTon: 450,
-    status: 'active'
-  };
-  const selectedMachine = pilotMachine;
+  // Selected Machine: MC03, MC04, MC05, MC06, etc.
+  const [selectedMachineNumber, setSelectedMachineNumber] = useState(initialMachineNumber || 'MC03');
+
+  React.useEffect(() => {
+    if (initialMachineNumber) {
+      setSelectedMachineNumber(initialMachineNumber);
+    }
+  }, [initialMachineNumber, isOpen]);
+
+  const selectedMachine = useMemo(() => {
+    const found = machinesList.find(m => (m.machineNumber || m.machineCode) === selectedMachineNumber);
+    if (found) return found;
+    return {
+      id: `m-${(selectedMachineNumber || 'mc03').toLowerCase()}`,
+      machineNumber: selectedMachineNumber || 'MC03',
+      machineName: selectedMachineNumber === 'MC04' ? 'Milacron 350T' :
+                   selectedMachineNumber === 'MC05' ? 'Milacron 250T' :
+                   selectedMachineNumber === 'MC06' ? 'Milacron 180T' : 'Milacron 450T',
+      capacityTon: selectedMachineNumber === 'MC04' ? 350 : selectedMachineNumber === 'MC05' ? 250 : selectedMachineNumber === 'MC06' ? 180 : 450,
+      tonnage: selectedMachineNumber === 'MC04' ? 350 : selectedMachineNumber === 'MC05' ? 250 : selectedMachineNumber === 'MC06' ? 180 : 450,
+      status: 'active'
+    };
+  }, [machinesList, selectedMachineNumber]);
 
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [shift, setShift] = useState('Shift A');
@@ -64,9 +78,15 @@ export default function ShiftSetupModal({
   });
   const [startCounter, setStartCounter] = useState('154200');
 
-  // Scoped pilot parts: strictly only parts mapped to MC03 for Live Trial
-  const scopedParts = partsList.filter(p => pilotPartCodes.includes(p.partCode || p.partNumber));
-  const effectivePartsList = scopedParts.length > 0 ? scopedParts : partsList;
+  // Available parts across all machines
+  const effectivePartsList = useMemo(() => {
+    if (partsList && partsList.length > 0) return partsList;
+    return [
+      { id: 'part-01', partNumber: 'F53200000A', partCode: 'F53200000A', partName: 'Front Bezel Enclosure', customer: 'Schneider Electric', standardCycleTimeSeconds: 20.0, cavityCount: 2, rawMaterialGrade: 'PPCP' },
+      { id: 'part-02', partNumber: '5036677', partCode: '5036677', partName: 'Terminal Cover Plate', customer: 'Bosch Automotive', standardCycleTimeSeconds: 15.0, cavityCount: 4, rawMaterialGrade: 'Nylon 6' },
+      { id: 'part-03', partNumber: '5012394', partCode: '5012394', partName: 'Switch Housing Bracket', customer: 'Tata Motors', standardCycleTimeSeconds: 25.0, cavityCount: 2, rawMaterialGrade: 'ABS' }
+    ];
+  }, [partsList]);
 
   const effectivePartId = partId || effectivePartsList[0]?.id || '';
   const selectedPart = effectivePartsList.find(p => p.id === effectivePartId) || effectivePartsList[0];
@@ -150,7 +170,7 @@ export default function ShiftSetupModal({
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Wrench size={20} color="var(--clr-primary)" />
-            <h2 style={{ fontSize: '1.05rem', margin: 0 }}>Start New Shift (MC03)</h2>
+            <h2 style={{ fontSize: '1.05rem', margin: 0 }}>Start New Shift ({selectedMachine.machineNumber})</h2>
           </div>
           <button type="button" className="close-btn" onClick={onClose}>
             <X size={20} />
@@ -188,30 +208,32 @@ export default function ShiftSetupModal({
               </div>
 
               <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label" style={{ color: 'var(--clr-primary)' }}>
-                  <Lock size={11} style={{ display: 'inline', marginRight: '3px' }} />
-                  Machine
+                <label className="form-label" style={{ color: 'var(--clr-primary)', fontWeight: 700 }}>
+                  <Wrench size={11} style={{ display: 'inline', marginRight: '3px' }} />
+                  Machine *
                 </label>
-                <div style={{
-                  padding: '8px 10px',
-                  background: 'var(--clr-primary-lt)',
-                  border: '1px solid #7dd3fc',
-                  borderRadius: 'var(--r-md)',
-                  fontWeight: 700,
-                  fontSize: '0.82rem',
-                  color: 'var(--clr-primary)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  height: '46px',
-                  boxSizing: 'border-box',
-                  minWidth: 0
-                }}>
-                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 800 }}>MC03 (450T)</span>
-                  <span className="badge badge-primary" style={{ fontSize: '0.58rem', padding: '2px 5px', flexShrink: 0 }}>
-                    LOCKED
-                  </span>
-                </div>
+                <select
+                  className="touch-select"
+                  style={{ minWidth: 0, width: '100%', fontWeight: 700 }}
+                  value={selectedMachineNumber}
+                  onChange={(e) => setSelectedMachineNumber(e.target.value)}
+                  required
+                >
+                  {machinesList.length > 0 ? (
+                    machinesList.map(m => (
+                      <option key={m.id || m.machineNumber} value={m.machineNumber}>
+                        {m.machineNumber} — {m.machineName || `${m.tonnage || m.capacityTon || ''}T`}
+                      </option>
+                    ))
+                  ) : (
+                    <>
+                      <option value="MC03">MC03 — Milacron 450T (Machine No 3)</option>
+                      <option value="MC04">MC04 — Milacron 350T (Machine No 4)</option>
+                      <option value="MC05">MC05 — Milacron 250T (Machine No 5)</option>
+                      <option value="MC06">MC06 — Milacron 180T (Machine No 6)</option>
+                    </>
+                  )}
+                </select>
               </div>
 
               <div className="form-group" style={{ margin: 0 }}>
@@ -243,9 +265,9 @@ export default function ShiftSetupModal({
                 value={effectivePartId}
                 onChange={(e) => setPartId(e.target.value)}
               >
-                {scopedParts.map(p => (
+                {effectivePartsList.map(p => (
                   <option key={p.id} value={p.id}>
-                    {p.partNumber || p.partCode} — {p.partName} ({p.customer})
+                    {p.partNumber || p.partCode} — {p.partName} ({p.customer || 'Standard'})
                   </option>
                 ))}
               </select>

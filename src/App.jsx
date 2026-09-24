@@ -92,9 +92,29 @@ export default function App() {
   const [materials, setMaterials] = useState(getMaterials());
   const [settings, setSettings] = useState(getSystemSettings());
 
-  // Shift Reports State
+  // Shift Reports State & Multi-Machine Selection
   const [reports, setReports] = useState(getShiftReports());
-  const [activeReport, setActiveReport] = useState(getActiveReport());
+  const [selectedMachineNumber, setSelectedMachineNumber] = useState('MC03');
+  const [setupTargetMachine, setSetupTargetMachine] = useState('MC03');
+
+  // Dynamically resolve activeReport for the selected machine from the shift reports list
+  const activeReport = React.useMemo(() => {
+    // 1. Look for unsubmitted (draft/active/unlocked) report for selectedMachineNumber
+    const draft = reports.find(
+      r => (r.machineNumber === selectedMachineNumber || (r.machine && r.machine.machineNumber === selectedMachineNumber)) &&
+           (r.status === 'draft' || r.status === 'active' || r.status === 'unlocked')
+    );
+    if (draft) return draft;
+
+    // 2. Look for most recent report for selectedMachineNumber
+    const latestForMc = reports.find(
+      r => r.machineNumber === selectedMachineNumber || (r.machine && r.machine.machineNumber === selectedMachineNumber)
+    );
+    if (latestForMc) return latestForMc;
+
+    return null;
+  }, [reports, selectedMachineNumber]);
+
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [lastCloudSyncTime, setLastCloudSyncTime] = useState(null);
 
@@ -106,8 +126,6 @@ export default function App() {
       const res = await fetchShiftReportsFromCloud();
       if (res && res.success && res.reports) {
         setReports(res.reports);
-        const active = getActiveReport();
-        if (active) setActiveReport(active);
       }
 
       // 2. Fetch plant master data (parts, machines, mappings, rejections) from cloud
@@ -196,7 +214,6 @@ export default function App() {
         try {
           console.log('Realtime delete event processed for:', deletedId);
           setReports(getShiftReports());
-          setActiveReport(getActiveReport());
         } catch (err) {
           console.warn('Realtime delete handling error:', err);
         }
@@ -299,7 +316,6 @@ export default function App() {
 
   // Sync state helper: saves locally and pushes to Supabase Cloud + Webhook
   const syncReportUpdates = (updatedReport) => {
-    setActiveReport(updatedReport);
     saveActiveReport(updatedReport);
     setReports(getShiftReports());
     // Auto-push to Supabase cloud and Google Sheet webhook
@@ -567,8 +583,10 @@ export default function App() {
   // 8. Create New Shift Report
   const handleCreateNewShift = (shiftData) => {
     const newReport = createNewShiftReport(shiftData);
-    setReports(getShiftReports());
-    setActiveReport(newReport);
+    const freshReports = getShiftReports();
+    setReports(freshReports);
+    const createdMachineNum = shiftData.machine?.machineNumber || 'MC03';
+    setSelectedMachineNumber(createdMachineNum);
     setActiveTab('console');
 
     const opName = newReport.operator_name || shiftData.operator_name || 'Floor Operator';
@@ -631,10 +649,15 @@ export default function App() {
 
   const pilotReadiness = checkPilotReadiness({ machines, parts, mappings, usersList: USERS });
 
-  const handleOpenNewShiftModal = () => {
+  const handleOpenNewShiftModal = (targetMachine = null) => {
     if (!pilotReadiness.isReady) {
       alert(`🔴 REQUIRED MASTER DATA NOT UPLOADED\n\nCannot start shift until mandatory master data is uploaded:\n- ${pilotReadiness.missing.join('\n- ')}\n\nPlease navigate to Data Upload Center to complete setup.`);
       return;
+    }
+    if (targetMachine && typeof targetMachine === 'string') {
+      setSetupTargetMachine(targetMachine);
+    } else if (selectedMachineNumber) {
+      setSetupTargetMachine(selectedMachineNumber);
     }
     setIsNewShiftModalOpen(true);
   };
@@ -669,6 +692,10 @@ export default function App() {
         {activeTab === 'console' && (
           <ProductionConsole
             activeReport={activeReport}
+            reports={reports}
+            machines={machines}
+            selectedMachineNumber={selectedMachineNumber}
+            onSelectMachine={(mcNum) => setSelectedMachineNumber(mcNum)}
             onOpenHourModal={(hourDef, existingEntry, session) => {
               setHourModalState({
                 isOpen: true,
@@ -682,7 +709,7 @@ export default function App() {
             onOpenCounterModal={() => setIsCounterModalOpen(true)}
             onOpenSummaryDrawer={() => setIsSummaryDrawerOpen(true)}
             currentUser={currentUser}
-            onOpenNewShiftModal={handleOpenNewShiftModal}
+            onOpenNewShiftModal={(targetMc) => handleOpenNewShiftModal(targetMc)}
             pilotReadiness={pilotReadiness}
           />
         )}
@@ -691,7 +718,9 @@ export default function App() {
           <MasterSheetView
             reports={reports}
             onSelectReportForViewing={(rep) => {
-              setActiveReport(rep);
+              if (rep?.machineNumber) {
+                setSelectedMachineNumber(rep.machineNumber);
+              }
               setActiveTab('console');
             }}
             onRefreshCloud={handleRefreshCloud}
@@ -709,7 +738,9 @@ export default function App() {
             downtimeCodes={downtimeCodes}
             currentUser={currentUser}
             onSelectReportForViewing={(rep) => {
-              setActiveReport(rep);
+              if (rep?.machineNumber) {
+                setSelectedMachineNumber(rep.machineNumber);
+              }
               setActiveTab('console');
             }}
             initialSubTab={activeTab === 'reports' ? 'reports' : 'oee'}
@@ -860,6 +891,7 @@ export default function App() {
           partsList={parts}
           currentUser={currentUser}
           onCreateShift={handleCreateNewShift}
+          initialMachineNumber={setupTargetMachine}
         />
       )}
 
