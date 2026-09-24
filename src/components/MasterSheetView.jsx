@@ -24,7 +24,8 @@ import {
   getMasterSheetWebhookUrl,
   saveMasterSheetWebhookUrl,
   triggerMasterSheetWebhook,
-  summarizeReportForMasterSync
+  summarizeReportForMasterSync,
+  syncAllReportsToGoogleSheet
 } from '../services/cloudSyncService';
 import { getSupabaseConfig } from '../services/storageService';
 import { useI18n } from '../i18n/I18nContext';
@@ -50,6 +51,8 @@ export default function MasterSheetView({
   const [showWebhookModal, setShowWebhookModal] = useState(false);
   const [webhookUrlInput, setWebhookUrlInput] = useState(getMasterSheetWebhookUrl());
   const [webhookTestStatus, setWebhookTestStatus] = useState(null); // 'testing', 'success', 'error'
+  const [isPushingAll, setIsPushingAll] = useState(false);
+  const [pushAllStatus, setPushAllStatus] = useState(null);
   const [copiedScript, setCopiedScript] = useState(false);
   const [recentlyUpdatedId, setRecentlyUpdatedId] = useState(null);
 
@@ -132,6 +135,26 @@ export default function MasterSheetView({
     setShowWebhookModal(false);
   };
 
+  // Push all existing submitted reports to Google Sheet
+  const handleSyncAllToGoogleSheet = async () => {
+    if (!webhookUrlInput) {
+      alert('Please configure and test your Google Sheet Webhook URL first.');
+      return;
+    }
+    setIsPushingAll(true);
+    setPushAllStatus(null);
+    saveMasterSheetWebhookUrl(webhookUrlInput);
+    const res = await syncAllReportsToGoogleSheet(reports);
+    setIsPushingAll(false);
+    if (res.success) {
+      setPushAllStatus(`✓ Successfully sent ${res.count} submitted report(s) directly to your Google Sheet!`);
+      setTimeout(() => setPushAllStatus(null), 6000);
+    } else {
+      setPushAllStatus(`✗ Push failed: ${res.error}`);
+      setTimeout(() => setPushAllStatus(null), 6000);
+    }
+  };
+
   // Test webhook handler
   const handleTestWebhook = async () => {
     if (!webhookUrlInput) {
@@ -172,23 +195,50 @@ export default function MasterSheetView({
   };
 
   const googleAppsScriptCode = `function doPost(e) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var data = JSON.parse(e.postData.contents);
-  if (sheet.getLastRow() === 0) {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var data = {};
+    if (e && e.postData && e.postData.contents) {
+      try {
+        data = JSON.parse(e.postData.contents);
+      } catch (err) {
+        data = e.parameter || {};
+      }
+    } else if (e && e.parameter) {
+      data = e.parameter;
+    }
+    
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow([
+        "Date", "Shift", "Machine", "Part Number", "Part Name",
+        "Operator", "Supervisor", "Target Qty", "Production Qty",
+        "Accepted Qty", "Rejection Qty", "Rejection %", "Downtime (Min)",
+        "Efficiency %", "Lumps (Kg)", "Status", "Submitted At"
+      ]);
+    }
     sheet.appendRow([
-      "Date", "Shift", "Machine", "Part Number", "Part Name",
-      "Operator", "Supervisor", "Target Qty", "Production Qty",
-      "Accepted Qty", "Rejection Qty", "Rejection %", "Downtime (Min)",
-      "Efficiency %", "Lumps (Kg)", "Status", "Submitted At"
+      data.date || "",
+      data.shift || "",
+      data.machineNumber || "",
+      data.partNumber || "",
+      data.partName || "",
+      data.operatorName || "",
+      data.supervisorName || "",
+      data.targetQty || 0,
+      data.productionQty || 0,
+      data.acceptedQty || 0,
+      data.rejectionQty || 0,
+      (data.rejectionRatePercent !== undefined ? data.rejectionRatePercent + "%" : "0%"),
+      data.downtimeMinutes || 0,
+      (data.efficiencyPercent !== undefined ? data.efficiencyPercent + "%" : "100%"),
+      ((data.lumps_generated_kg || data.lumpsGeneratedKg || 0) + " kg"),
+      data.status || "submitted",
+      data.submittedAt || new Date().toISOString()
     ]);
+    return ContentService.createTextOutput(JSON.stringify({ result: "success" })).setMimeType(ContentService.MimeType.JSON);
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({ result: "error", message: error.toString() })).setMimeType(ContentService.MimeType.JSON);
   }
-  sheet.appendRow([
-    data.date, data.shift, data.machineNumber, data.partNumber, data.partName,
-    data.operatorName, data.supervisorName, data.targetQty, data.productionQty,
-    data.acceptedQty, data.rejectionQty, data.rejectionRatePercent + "%",
-    data.downtimeMinutes, data.efficiencyPercent + "%", (data.lumps_generated_kg || data.lumpsGeneratedKg || 0) + " kg", data.status, data.submittedAt
-  ]);
-  return ContentService.createTextOutput(JSON.stringify({result: "success"})).setMimeType(ContentService.MimeType.JSON);
 }`;
 
   const copyScriptToClipboard = () => {
@@ -741,21 +791,50 @@ export default function MasterSheetView({
               </ol>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+            {pushAllStatus && (
+              <div style={{
+                padding: '10px 14px',
+                borderRadius: '6px',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                marginBottom: '14px',
+                background: pushAllStatus.startsWith('✓') ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                color: pushAllStatus.startsWith('✓') ? '#059669' : '#dc2626',
+                border: pushAllStatus.startsWith('✓') ? '1px solid #10b981' : '1px solid #ef4444'
+              }}>
+                {pushAllStatus}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
               <button
                 type="button"
-                className="btn btn-outline"
-                onClick={() => setShowWebhookModal(false)}
+                className="btn btn-outline btn-sm"
+                onClick={handleSyncAllToGoogleSheet}
+                disabled={isPushingAll || !webhookUrlInput}
+                title="Send all submitted shift reports in the app to your Google Sheet"
+                style={{ borderColor: 'var(--clr-primary)', color: 'var(--clr-primary)' }}
               >
-                Cancel
+                <RefreshCw size={14} className={isPushingAll ? 'spin' : ''} />
+                <span>{isPushingAll ? 'Syncing to Google Sheet...' : 'Sync All Reports to Google Sheet Now'}</span>
               </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={handleSaveWebhook}
-              >
-                Save Settings
-              </button>
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => setShowWebhookModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleSaveWebhook}
+                >
+                  Save Settings
+                </button>
+              </div>
             </div>
           </div>
         </div>

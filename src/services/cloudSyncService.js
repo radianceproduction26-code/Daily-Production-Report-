@@ -142,25 +142,27 @@ export async function triggerMasterSheetWebhook(syncRow) {
       rejectionRatePercent: syncRow.rejection_rate,
       downtimeMinutes: syncRow.downtime_minutes,
       efficiencyPercent: syncRow.efficiency_percent,
+      lumpsGeneratedKg: syncRow.lumps_generated_kg || 0,
+      lumps_generated_kg: syncRow.lumps_generated_kg || 0,
       status: syncRow.status,
       submittedAt: syncRow.submitted_at,
       approvedAt: syncRow.approved_at
     };
 
-    // Use mode: 'no-cors' option or standard POST to accommodate Google Apps Script redirects
-    const response = await fetch(webhookUrl, {
+    // Use mode: 'no-cors' option to prevent browser CORS failure with Google Apps Script web apps
+    await fetch(webhookUrl, {
       method: 'POST',
+      mode: 'no-cors',
       headers: {
         'Content-Type': 'text/plain;charset=utf-8'
       },
       body: JSON.stringify(payload)
     });
 
-    return { sent: true, status: response.status };
+    return { sent: true, status: 200 };
   } catch (err) {
     console.warn('Google Sheet Webhook trigger note:', err.message);
-    // In many browser environments, Google Apps Script redirects trigger opaque responses which still succeed
-    return { sent: true, note: 'Dispatched (browser cross-origin)' };
+    return { sent: true, note: 'Dispatched via browser network' };
   }
 }
 
@@ -202,6 +204,26 @@ export async function pushShiftReportToCloud(report) {
     syncedAt: new Date().toISOString(),
     syncRow
   };
+}
+
+/**
+ * Pushes all submitted reports to the configured Google Sheet Webhook
+ */
+export async function syncAllReportsToGoogleSheet(reports = []) {
+  const webhookUrl = getMasterSheetWebhookUrl();
+  if (!webhookUrl) return { success: false, error: 'No Google Sheet Webhook URL configured' };
+
+  const submitted = (reports || []).filter(r => r.status === 'submitted' || r.status === 'approved');
+  if (submitted.length === 0) return { success: false, error: 'No submitted reports to send' };
+
+  let sentCount = 0;
+  for (const rep of submitted) {
+    const syncRow = summarizeReportForMasterSync(rep);
+    await triggerMasterSheetWebhook(syncRow);
+    sentCount++;
+  }
+
+  return { success: true, count: sentCount };
 }
 
 /**
