@@ -239,10 +239,50 @@ img { display: block; max-width: 100%; }
   max-width: 110px;
 }
 
-/* Legacy nav-pills — hidden on mobile, shown on tablet+ */
-.nav-pills { display: none; }
-.nav-pill-btn { display: none; }
-.header-status-bar { display: none; }
+/* Navigation Pills — Always visible on all screens with smooth touch scroll */
+.nav-pills {
+  display: flex !important;
+  align-items: center;
+  background: var(--bg-surface2);
+  padding: 3px 6px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--clr-border);
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+.nav-pills::-webkit-scrollbar { display: none; }
+
+.nav-pill-btn {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-family: var(--font);
+  border: none;
+  background: transparent;
+  color: var(--clr-text2);
+  border-radius: var(--r-full);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.nav-pill-btn:hover {
+  background: rgba(2, 132, 199, 0.08);
+  color: var(--clr-primary);
+}
+
+.nav-pill-btn.active {
+  background: var(--clr-primary) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 6px rgba(2, 132, 199, 0.35);
+}
 
 /* ============================================================
    BOTTOM NAVIGATION BAR (mobile only)

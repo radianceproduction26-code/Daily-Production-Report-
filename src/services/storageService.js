@@ -803,7 +803,17 @@ export function getParts() {
 }
 export function saveParts(parts) {
   if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(KEYS.PARTS, JSON.stringify(parts));
+    const partsMap = new Map();
+    // Guarantee base 3 parts always exist
+    INITIAL_PARTS.forEach(p => {
+      const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
+      if (code) partsMap.set(code, p);
+    });
+    (parts || []).forEach(p => {
+      const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
+      if (code) partsMap.set(code, p);
+    });
+    localStorage.setItem(KEYS.PARTS, JSON.stringify(Array.from(partsMap.values())));
   }
   syncMasterDataToCloudBackground();
 }
@@ -1015,13 +1025,75 @@ export function saveMachinePartMappings(mappings) {
 export function saveUnifiedMasterData({ parts = [], machines = [], mappings = [] }) {
   if (typeof localStorage !== 'undefined') {
     if (parts.length > 0) {
-      localStorage.setItem(KEYS.PARTS, JSON.stringify(parts));
+      // Preserve the 3 foundational parts (F53200000A, 5036677, 5012394) and merge with uploaded parts
+      const currentParts = getParts();
+      const partsMap = new Map();
+
+      // 1. Put initial 3 parts
+      INITIAL_PARTS.forEach(p => {
+        const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
+        if (code) partsMap.set(code, p);
+      });
+
+      // 2. Put existing parts from storage
+      currentParts.forEach(p => {
+        const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
+        if (code) partsMap.set(code, p);
+      });
+
+      // 3. Merge uploaded parts (new parts added, existing updated without altering base 3 unless specified)
+      const protected3 = new Set(['F53200000A', '5036677', '5012394']);
+      parts.forEach(p => {
+        const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
+        if (!code) return;
+        if (protected3.has(code)) {
+          // If already in map, retain or non-destructively merge
+          const existing = partsMap.get(code);
+          partsMap.set(code, { ...existing, ...p });
+        } else {
+          partsMap.set(code, p);
+        }
+      });
+
+      localStorage.setItem(KEYS.PARTS, JSON.stringify(Array.from(partsMap.values())));
     }
+
     if (machines.length > 0) {
-      localStorage.setItem(KEYS.MACHINES, JSON.stringify(machines));
+      const currentMachines = getMachines();
+      const mcMap = new Map();
+      currentMachines.forEach(m => {
+        const num = (m.machineNumber || m.machineCode || '').trim().toUpperCase();
+        if (num) mcMap.set(num, m);
+      });
+      machines.forEach(m => {
+        const num = (m.machineNumber || m.machineCode || '').trim().toUpperCase();
+        if (num) {
+          if (mcMap.has(num)) {
+            mcMap.set(num, { ...mcMap.get(num), ...m });
+          } else {
+            mcMap.set(num, m);
+          }
+        }
+      });
+      localStorage.setItem(KEYS.MACHINES, JSON.stringify(Array.from(mcMap.values())));
     }
+
     if (mappings.length > 0) {
-      localStorage.setItem(KEYS.MACHINE_PART_MAPPINGS, JSON.stringify(mappings));
+      const currentMappings = getMachinePartMappings();
+      const mappingMap = new Map();
+      const getMapKey = (m) => `${(m.machineCode || m.machineNumber || '').trim().toUpperCase()}__${(m.partCode || m.partNumber || '').trim().toUpperCase()}`;
+
+      currentMappings.forEach(m => {
+        const key = getMapKey(m);
+        if (key !== '__') mappingMap.set(key, m);
+      });
+
+      mappings.forEach(m => {
+        const key = getMapKey(m);
+        if (key !== '__') mappingMap.set(key, m);
+      });
+
+      localStorage.setItem(KEYS.MACHINE_PART_MAPPINGS, JSON.stringify(Array.from(mappingMap.values())));
     }
   }
   syncMasterDataToCloudBackground();

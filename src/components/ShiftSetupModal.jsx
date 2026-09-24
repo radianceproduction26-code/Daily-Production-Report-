@@ -1,5 +1,5 @@
-// Radiance Polymers - Production Setup Wizard (Phase 10 MC03 Live Trial Execution Mode)
-import React, { useState, useMemo } from 'react';
+// Radiance Polymers - Production Setup Wizard (Multi-Machine Shift Start Module)
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Wrench,
   X,
@@ -14,8 +14,12 @@ import {
 } from 'lucide-react';
 import { calculateTheoreticalHourlyTarget } from '../services/validationEngine';
 import { useI18n } from '../i18n/I18nContext';
-import { verifyProductionDataReadiness, getOperators } from '../services/storageService';
-import { INITIAL_OPERATORS } from '../data/seedData';
+import {
+  verifyProductionDataReadiness,
+  getOperators,
+  getMachinePartMappings
+} from '../services/storageService';
+import { INITIAL_OPERATORS, INITIAL_PARTS, INITIAL_MACHINE_PART_MAPPINGS } from '../data/seedData';
 
 export default function ShiftSetupModal({
   isOpen,
@@ -23,6 +27,7 @@ export default function ShiftSetupModal({
   machinesList = [],
   mouldsList = [],
   partsList = [],
+  mappingsList = [],
   currentUser,
   onCreateShift,
   initialMachineNumber = 'MC03'
@@ -33,7 +38,7 @@ export default function ShiftSetupModal({
   // Selected Machine: MC03, MC04, MC05, MC06, etc.
   const [selectedMachineNumber, setSelectedMachineNumber] = useState(initialMachineNumber || 'MC03');
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (initialMachineNumber) {
       setSelectedMachineNumber(initialMachineNumber);
     }
@@ -68,7 +73,6 @@ export default function ShiftSetupModal({
     return INITIAL_OPERATORS;
   }, []);
 
-  const [partId, setPartId] = useState('');
   const [operatorName, setOperatorName] = useState(() => {
     try {
       const stored = getOperators();
@@ -78,18 +82,73 @@ export default function ShiftSetupModal({
   });
   const [startCounter, setStartCounter] = useState('154200');
 
-  // Available parts across all machines
+  // Master Parts List (Guaranteed baseline 3 parts + any uploaded parts)
   const effectivePartsList = useMemo(() => {
-    if (partsList && partsList.length > 0) return partsList;
-    return [
-      { id: 'part-01', partNumber: 'F53200000A', partCode: 'F53200000A', partName: 'Front Bezel Enclosure', customer: 'Schneider Electric', standardCycleTimeSeconds: 20.0, cavityCount: 2, rawMaterialGrade: 'PPCP' },
-      { id: 'part-02', partNumber: '5036677', partCode: '5036677', partName: 'Terminal Cover Plate', customer: 'Bosch Automotive', standardCycleTimeSeconds: 15.0, cavityCount: 4, rawMaterialGrade: 'Nylon 6' },
-      { id: 'part-03', partNumber: '5012394', partCode: '5012394', partName: 'Switch Housing Bracket', customer: 'Tata Motors', standardCycleTimeSeconds: 25.0, cavityCount: 2, rawMaterialGrade: 'ABS' }
-    ];
+    if (partsList && partsList.length > 0) {
+      // Merge with initial parts to ensure initial 3 are never missing
+      const pMap = new Map();
+      INITIAL_PARTS.forEach(p => {
+        const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
+        if (code) pMap.set(code, p);
+      });
+      partsList.forEach(p => {
+        const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
+        if (code) pMap.set(code, p);
+      });
+      return Array.from(pMap.values());
+    }
+    return INITIAL_PARTS;
   }, [partsList]);
 
-  const effectivePartId = partId || effectivePartsList[0]?.id || '';
-  const selectedPart = effectivePartsList.find(p => p.id === effectivePartId) || effectivePartsList[0];
+  // Active Machine-Part Mappings (from props or storage or seed)
+  const effectiveMappings = useMemo(() => {
+    if (mappingsList && mappingsList.length > 0) return mappingsList;
+    try {
+      const stored = getMachinePartMappings();
+      if (Array.isArray(stored) && stored.length > 0) return stored;
+    } catch (e) {}
+    return INITIAL_MACHINE_PART_MAPPINGS;
+  }, [mappingsList]);
+
+  // Filter parts strictly for the selected machine based on sheet mappings
+  const machineLinkedParts = useMemo(() => {
+    const selMc = (selectedMachineNumber || 'MC03').trim().toUpperCase();
+    const linkedCodes = new Set();
+
+    effectiveMappings.forEach(m => {
+      const mcNum = (m.machineCode || m.machineNumber || '').trim().toUpperCase();
+      if (mcNum === selMc && m.approvedToRun !== false && m.isApproved !== false && m.status !== 'inactive') {
+        const pCode = (m.partCode || m.partNumber || '').trim().toUpperCase();
+        if (pCode) linkedCodes.add(pCode);
+      }
+    });
+
+    if (linkedCodes.size > 0) {
+      const filtered = effectivePartsList.filter(p => {
+        const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
+        return linkedCodes.has(code);
+      });
+      if (filtered.length > 0) return filtered;
+    }
+
+    // Graceful fallback if no explicit mappings yet configured for this machine
+    return effectivePartsList;
+  }, [selectedMachineNumber, effectiveMappings, effectivePartsList]);
+
+  const [partId, setPartId] = useState('');
+
+  // Automatically switch selected part when machine changes to stay within linked moulds
+  useEffect(() => {
+    if (machineLinkedParts.length > 0) {
+      const exists = machineLinkedParts.some(p => p.id === partId || p.partNumber === partId || p.partCode === partId);
+      if (!exists) {
+        setPartId(machineLinkedParts[0].id || machineLinkedParts[0].partNumber);
+      }
+    }
+  }, [selectedMachineNumber, machineLinkedParts]);
+
+  const effectivePartId = partId || machineLinkedParts[0]?.id || '';
+  const selectedPart = machineLinkedParts.find(p => p.id === effectivePartId || p.partNumber === effectivePartId || p.partCode === effectivePartId) || machineLinkedParts[0];
 
   // Standard Cycle Time (Locked) from Part Master
   const standardCycleTime = Number(selectedPart?.standardCycleTimeSeconds) || 20;
@@ -99,12 +158,12 @@ export default function ShiftSetupModal({
     selectedPart?.actualCycleTimeSeconds ? String(selectedPart.actualCycleTimeSeconds) : String(standardCycleTime)
   );
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (selectedPart) {
       const std = selectedPart.standardCycleTimeSeconds || 20;
       setActualCycleTime(String(selectedPart.actualCycleTimeSeconds || std));
     }
-  }, [selectedPart?.id]);
+  }, [selectedPart?.id, selectedPart?.partNumber]);
 
   const activeCycleTime = parseFloat(actualCycleTime) > 0
     ? parseFloat(actualCycleTime)
@@ -140,6 +199,7 @@ export default function ShiftSetupModal({
       reportDate: date,
       shift,
       machine: selectedMachine,
+      machineNumber: selectedMachine.machineNumber,
       operator: { ...currentUser, fullName: operatorName.trim(), name: operatorName.trim() },
       operator_name: operatorName.trim(),
       operatorName: operatorName.trim(),
@@ -165,40 +225,184 @@ export default function ShiftSetupModal({
   };
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-card">
-        <div className="modal-header">
+    <div
+      className="modal-overlay"
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(15, 23, 42, 0.65)',
+        backdropFilter: 'blur(4px)',
+        zIndex: 1000,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '12px',
+        boxSizing: 'border-box'
+      }}
+    >
+      <div
+        className="modal-card"
+        style={{
+          background: 'var(--bg-surface)',
+          width: '100%',
+          maxWidth: '560px',
+          maxHeight: '94vh',
+          display: 'flex',
+          flexDirection: 'column',
+          borderRadius: '16px',
+          boxShadow: '0 20px 40px rgba(0, 0, 0, 0.25)',
+          border: '1px solid var(--clr-border)',
+          overflow: 'hidden',
+          boxSizing: 'border-box'
+        }}
+      >
+        {/* Modal Header */}
+        <div
+          className="modal-header"
+          style={{
+            padding: '12px 16px',
+            borderBottom: '1px solid var(--clr-border)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: 'var(--bg-surface)'
+          }}
+        >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Wrench size={20} color="var(--clr-primary)" />
-            <h2 style={{ fontSize: '1.05rem', margin: 0 }}>Start New Shift ({selectedMachine.machineNumber})</h2>
+            <div
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                background: 'var(--clr-primary-lt)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}
+            >
+              <Wrench size={18} color="var(--clr-primary)" />
+            </div>
+            <div>
+              <h2 style={{ fontSize: '1.02rem', fontWeight: 800, margin: 0, color: 'var(--clr-text)' }}>
+                Start New Shift ({selectedMachine.machineNumber})
+              </h2>
+              <span style={{ fontSize: '0.72rem', color: 'var(--clr-text3)', fontWeight: 600 }}>
+                {selectedMachine.machineName || `${selectedMachine.tonnage || 350}T`}
+              </span>
+            </div>
           </div>
-          <button type="button" className="close-btn" onClick={onClose}>
+          <button
+            type="button"
+            className="close-btn"
+            onClick={onClose}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'var(--clr-text2)',
+              padding: '6px',
+              borderRadius: '8px'
+            }}
+          >
             <X size={20} />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-          <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            
-            {/* Row 1: Date, Shift, Machine, Supervisor (2x2 grid on mobile) */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">Date</label>
-                <input
-                  type="date"
-                  className="touch-input"
-                  style={{ minWidth: 0, width: '100%' }}
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">{t('active_shift')}</label>
+        {/* Modal Form */}
+        <form
+          onSubmit={handleSubmit}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            flex: 1,
+            overflow: 'hidden',
+            boxSizing: 'border-box'
+          }}
+        >
+          <div
+            className="modal-body"
+            style={{
+              padding: '14px 16px',
+              overflowY: 'auto',
+              WebkitOverflowScrolling: 'touch',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+              boxSizing: 'border-box'
+            }}
+          >
+            {/* Grid 1: Machine, Shift, Date, Supervisor (2x2 grid with minmax(0, 1fr) so no boxes overlap) */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+                gap: '10px',
+                boxSizing: 'border-box'
+              }}
+            >
+              {/* Machine Selector */}
+              <div className="form-group" style={{ margin: 0, minWidth: 0 }}>
+                <label className="form-label" style={{ color: 'var(--clr-primary)', fontWeight: 800, fontSize: '0.76rem', display: 'flex', alignItems: 'center', gap: '4px', margin: '0 0 4px 0' }}>
+                  <Wrench size={12} />
+                  <span>Machine *</span>
+                </label>
                 <select
                   className="touch-select"
-                  style={{ minWidth: 0, width: '100%', fontWeight: 700 }}
+                  style={{
+                    minWidth: 0,
+                    width: '100%',
+                    height: '42px',
+                    fontWeight: 800,
+                    fontSize: '0.85rem',
+                    boxSizing: 'border-box',
+                    padding: '0 8px',
+                    border: '1.5px solid var(--clr-primary)',
+                    borderRadius: '8px',
+                    background: 'var(--bg-surface)'
+                  }}
+                  value={selectedMachineNumber}
+                  onChange={(e) => setSelectedMachineNumber(e.target.value)}
+                  required
+                >
+                  {machinesList.length > 0 ? (
+                    machinesList.map(m => (
+                      <option key={m.id || m.machineNumber} value={m.machineNumber}>
+                        {m.machineNumber} ({m.machineName || `${m.tonnage || 350}T`})
+                      </option>
+                    ))
+                  ) : (
+                    <>
+                      <option value="MC03">MC03 (Milacron 450T)</option>
+                      <option value="MC04">MC04 (Milacron 350T)</option>
+                      <option value="MC05">MC05 (Milacron 250T)</option>
+                      <option value="MC06">MC06 (Milacron 180T)</option>
+                    </>
+                  )}
+                </select>
+              </div>
+
+              {/* Shift */}
+              <div className="form-group" style={{ margin: 0, minWidth: 0 }}>
+                <label className="form-label" style={{ fontWeight: 800, fontSize: '0.76rem', display: 'flex', alignItems: 'center', gap: '4px', margin: '0 0 4px 0' }}>
+                  <span>{t('active_shift')} *</span>
+                </label>
+                <select
+                  className="touch-select"
+                  style={{
+                    minWidth: 0,
+                    width: '100%',
+                    height: '42px',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    boxSizing: 'border-box',
+                    padding: '0 8px',
+                    borderRadius: '8px',
+                    background: 'var(--bg-surface)'
+                  }}
                   value={shift}
                   onChange={(e) => setShift(e.target.value)}
                 >
@@ -207,43 +411,49 @@ export default function ShiftSetupModal({
                 </select>
               </div>
 
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label" style={{ color: 'var(--clr-primary)', fontWeight: 700 }}>
-                  <Wrench size={11} style={{ display: 'inline', marginRight: '3px' }} />
-                  Machine *
+              {/* Date */}
+              <div className="form-group" style={{ margin: 0, minWidth: 0 }}>
+                <label className="form-label" style={{ fontWeight: 700, fontSize: '0.76rem', display: 'flex', alignItems: 'center', gap: '4px', margin: '0 0 4px 0' }}>
+                  <Calendar size={12} />
+                  <span>Date *</span>
                 </label>
-                <select
-                  className="touch-select"
-                  style={{ minWidth: 0, width: '100%', fontWeight: 700 }}
-                  value={selectedMachineNumber}
-                  onChange={(e) => setSelectedMachineNumber(e.target.value)}
+                <input
+                  type="date"
+                  className="touch-input"
+                  style={{
+                    minWidth: 0,
+                    width: '100%',
+                    height: '42px',
+                    fontSize: '0.85rem',
+                    boxSizing: 'border-box',
+                    padding: '0 8px',
+                    borderRadius: '8px'
+                  }}
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
                   required
-                >
-                  {machinesList.length > 0 ? (
-                    machinesList.map(m => (
-                      <option key={m.id || m.machineNumber} value={m.machineNumber}>
-                        {m.machineNumber} — {m.machineName || `${m.tonnage || m.capacityTon || ''}T`}
-                      </option>
-                    ))
-                  ) : (
-                    <>
-                      <option value="MC03">MC03 — Milacron 450T (Machine No 3)</option>
-                      <option value="MC04">MC04 — Milacron 350T (Machine No 4)</option>
-                      <option value="MC05">MC05 — Milacron 250T (Machine No 5)</option>
-                      <option value="MC06">MC06 — Milacron 180T (Machine No 6)</option>
-                    </>
-                  )}
-                </select>
+                />
               </div>
 
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">
-                  <UserCheck size={11} style={{ display: 'inline', marginRight: '3px' }} />
-                  Supervisor *
+              {/* Supervisor */}
+              <div className="form-group" style={{ margin: 0, minWidth: 0 }}>
+                <label className="form-label" style={{ fontWeight: 700, fontSize: '0.76rem', display: 'flex', alignItems: 'center', gap: '4px', margin: '0 0 4px 0' }}>
+                  <UserCheck size={12} />
+                  <span>Supervisor *</span>
                 </label>
                 <select
                   className="touch-select"
-                  style={{ minWidth: 0, width: '100%' }}
+                  style={{
+                    minWidth: 0,
+                    width: '100%',
+                    height: '42px',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    boxSizing: 'border-box',
+                    padding: '0 8px',
+                    borderRadius: '8px',
+                    background: 'var(--bg-surface)'
+                  }}
                   value={supervisorName}
                   onChange={(e) => setSupervisorName(e.target.value)}
                   required
@@ -254,96 +464,144 @@ export default function ShiftSetupModal({
               </div>
             </div>
 
-            {/* Row 2: Part Selection */}
-            <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label" style={{ fontWeight: 700, color: 'var(--clr-primary)' }}>
-                <span>Part Number / Tool Identifier *</span>
-              </label>
+            {/* Mould / Part Selection (Filtered strictly by selected machine) */}
+            <div className="form-group" style={{ margin: 0, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                <label className="form-label" style={{ fontWeight: 800, color: 'var(--clr-primary)', fontSize: '0.78rem', margin: 0 }}>
+                  <span>Mould / Part Number *</span>
+                </label>
+                <span
+                  style={{
+                    fontSize: '0.68rem',
+                    fontWeight: 800,
+                    color: 'var(--clr-primary)',
+                    background: 'var(--clr-primary-lt)',
+                    padding: '2px 8px',
+                    borderRadius: '999px',
+                    border: '1px solid #bae6fd'
+                  }}
+                >
+                  {machineLinkedParts.length} linked to {selectedMachineNumber}
+                </span>
+              </div>
               <select
                 className="touch-select"
-                style={{ fontSize: '0.88rem', fontWeight: 700, height: '46px', minWidth: 0, width: '100%' }}
+                style={{
+                  fontSize: '0.88rem',
+                  fontWeight: 800,
+                  height: '44px',
+                  minWidth: 0,
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  borderColor: 'var(--clr-primary)',
+                  borderRadius: '8px',
+                  background: 'var(--bg-surface)'
+                }}
                 value={effectivePartId}
                 onChange={(e) => setPartId(e.target.value)}
               >
-                {effectivePartsList.map(p => (
-                  <option key={p.id} value={p.id}>
+                {machineLinkedParts.map(p => (
+                  <option key={p.id || p.partNumber} value={p.id || p.partNumber}>
                     {p.partNumber || p.partCode} — {p.partName} ({p.customer || 'Standard'})
                   </option>
                 ))}
               </select>
             </div>
 
-            {/* Auto-Fetched Technical Specifications Card with Dual Cycle Time */}
+            {/* Technical Specifications Card with Dual Cycle Time & Target */}
             {selectedPart && (
-              <div style={{ background: 'var(--bg-surface2)', border: '1px solid var(--clr-border)', borderRadius: 'var(--r-md)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div
+                style={{
+                  background: 'var(--bg-surface2)',
+                  border: '1px solid var(--clr-border)',
+                  borderRadius: '10px',
+                  padding: '10px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                  boxSizing: 'border-box'
+                }}
+              >
+                {/* Header row of specs */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--clr-border)', paddingBottom: '6px' }}>
-                  <span style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--clr-primary)' }}>
-                    Specs ({selectedPart.partNumber})
+                  <span style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--clr-primary)' }}>
+                    SPECS · {selectedPart.partNumber || selectedPart.partCode}
                   </span>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <span className="badge badge-gray" style={{ fontSize: '0.65rem' }}>{selectedPart.rawMaterialGrade || 'PPCP'}</span>
-                    <span className="badge badge-primary" style={{ fontSize: '0.65rem' }}>{selectedPart.customer}</span>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    <span className="badge badge-gray" style={{ fontSize: '0.62rem', padding: '1px 6px' }}>
+                      {selectedPart.rawMaterialGrade || 'PPCP'}
+                    </span>
+                    <span className="badge badge-primary" style={{ fontSize: '0.62rem', padding: '1px 6px' }}>
+                      {selectedPart.customer || 'Internal'}
+                    </span>
                   </div>
                 </div>
 
-                {/* 3x2 Grid for Mobile-Optimized Specs */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', textAlign: 'center' }}>
-                  {/* Row 1: Physical Specs */}
-                  <div style={{ background: '#fff', padding: '6px 4px', borderRadius: 'var(--r-sm)', border: '1px solid var(--clr-border)' }}>
+                {/* Physical metrics: Part Wt, Runner Wt, Cavities (3 across) */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px', textAlign: 'center' }}>
+                  <div style={{ background: '#fff', padding: '6px 4px', borderRadius: '6px', border: '1px solid var(--clr-border)', boxSizing: 'border-box' }}>
                     <div style={{ fontSize: '0.62rem', color: 'var(--clr-text3)', fontWeight: 700 }}>Part Wt</div>
-                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.88rem', fontWeight: 800 }}>
-                      {selectedPart.partWeightGrams}g
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', fontWeight: 800 }}>
+                      {selectedPart.partWeightGrams || 0}g
                     </div>
                   </div>
 
-                  <div style={{ background: '#fff', padding: '6px 4px', borderRadius: 'var(--r-sm)', border: '1px solid var(--clr-border)' }}>
+                  <div style={{ background: '#fff', padding: '6px 4px', borderRadius: '6px', border: '1px solid var(--clr-border)', boxSizing: 'border-box' }}>
                     <div style={{ fontSize: '0.62rem', color: 'var(--clr-text3)', fontWeight: 700 }}>Runner Wt</div>
-                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.88rem', fontWeight: 800 }}>
-                      {selectedPart.runnerWeightGrams}g
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', fontWeight: 800 }}>
+                      {selectedPart.runnerWeightGrams || 0}g
                     </div>
                   </div>
 
-                  <div style={{ background: '#fff', padding: '6px 4px', borderRadius: 'var(--r-sm)', border: '1px solid var(--clr-border)' }}>
+                  <div style={{ background: '#fff', padding: '6px 4px', borderRadius: '6px', border: '1px solid var(--clr-border)', boxSizing: 'border-box' }}>
                     <div style={{ fontSize: '0.62rem', color: 'var(--clr-text3)', fontWeight: 700 }}>Cavities</div>
-                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.88rem', fontWeight: 800, color: 'var(--clr-text)' }}>
-                      {selectedPart.cavityCount} Cav
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', fontWeight: 800, color: 'var(--clr-text)' }}>
+                      {selectedPart.cavityCount || 1} Cav
                     </div>
                   </div>
+                </div>
 
-                  {/* Row 2: Dual Cycle Times & Target */}
-                  {/* 1. Standard Cycle Time (LOCKED) */}
-                  <div style={{
-                    background: '#f1f5f9',
-                    padding: '4px 4px',
-                    borderRadius: 'var(--r-sm)',
-                    border: '1.5px solid #cbd5e1',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}>
+                {/* Production Cycle Times & Theoretical Hourly Target (Clean 3-box layout) */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px', textAlign: 'center' }}>
+                  {/* 1. Standard Cycle Time (Locked) */}
+                  <div
+                    style={{
+                      background: '#f8fafc',
+                      padding: '6px 4px',
+                      borderRadius: '6px',
+                      border: '1px solid #cbd5e1',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxSizing: 'border-box'
+                    }}
+                  >
                     <div style={{ fontSize: '0.58rem', color: 'var(--clr-text3)', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '2px' }}>
                       <Lock size={9} /> Std Cycle
                     </div>
-                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.92rem', fontWeight: 900, color: 'var(--clr-text2)' }}>
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.90rem', fontWeight: 900, color: 'var(--clr-text2)' }}>
                       {standardCycleTime}s
                     </div>
-                    <span className="badge badge-gray" style={{ fontSize: '0.52rem', padding: '0px 3px', lineHeight: 1.2 }}>
+                    <span style={{ fontSize: '0.52rem', color: 'var(--clr-text3)', fontWeight: 700 }}>
                       LOCKED
                     </span>
                   </div>
 
-                  {/* 2. Actual Cycle Time (EDITABLE) */}
-                  <div style={{
-                    background: '#fff',
-                    padding: '4px 4px',
-                    borderRadius: 'var(--r-sm)',
-                    border: '1.5px solid var(--clr-primary)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}>
+                  {/* 2. Actual Cycle Time (Editable) */}
+                  <div
+                    style={{
+                      background: '#fff',
+                      padding: '4px 4px',
+                      borderRadius: '6px',
+                      border: '1.5px solid var(--clr-primary)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxSizing: 'border-box'
+                    }}
+                  >
                     <div style={{ fontSize: '0.58rem', color: 'var(--clr-primary)', fontWeight: 800 }}>
                       Act Cycle ✏️
                     </div>
@@ -364,34 +622,38 @@ export default function ShiftSetupModal({
                         fontWeight: 900,
                         color: 'var(--clr-primary)',
                         outline: 'none',
-                        padding: '1px 0'
+                        padding: '1px 0',
+                        boxSizing: 'border-box'
                       }}
                       title="Actual running cycle time in seconds"
                       required
                     />
-                    <span style={{ fontSize: '0.52rem', color: 'var(--clr-primary)', fontWeight: 700, lineHeight: 1.2 }}>
-                      EDITABLE
+                    <span style={{ fontSize: '0.52rem', color: 'var(--clr-primary)', fontWeight: 700 }}>
+                      seconds
                     </span>
                   </div>
 
                   {/* 3. Target Per Hour */}
-                  <div style={{
-                    background: 'var(--clr-primary-lt)',
-                    padding: '4px 4px',
-                    borderRadius: 'var(--r-sm)',
-                    border: '1px solid #7dd3fc',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}>
+                  <div
+                    style={{
+                      background: 'var(--clr-primary-lt)',
+                      padding: '6px 4px',
+                      borderRadius: '6px',
+                      border: '1px solid #7dd3fc',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxSizing: 'border-box'
+                    }}
+                  >
                     <div style={{ fontSize: '0.58rem', color: 'var(--clr-primary)', fontWeight: 800 }}>
                       Target/Hr
                     </div>
-                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.95rem', fontWeight: 900, color: 'var(--clr-primary)' }}>
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.92rem', fontWeight: 900, color: 'var(--clr-primary)' }}>
                       {targetPerHour}
                     </div>
-                    <span style={{ fontSize: '0.52rem', color: 'var(--clr-primary)', fontWeight: 700, lineHeight: 1.2 }}>
+                    <span style={{ fontSize: '0.52rem', color: 'var(--clr-primary)', fontWeight: 700 }}>
                       pcs/hr
                     </span>
                   </div>
@@ -399,23 +661,33 @@ export default function ShiftSetupModal({
               </div>
             )}
 
-            {/* Row 3: Operator & Start Counter (2-col on mobile) */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label" style={{ fontWeight: 700, color: 'var(--clr-primary)' }}>
-                  <UserCheck size={11} style={{ display: 'inline', marginRight: '3px' }} />
+            {/* Operator & Start Counter (2-column layout with minmax(0, 1fr)) */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 0.8fr)',
+                gap: '10px',
+                boxSizing: 'border-box'
+              }}
+            >
+              {/* Operator */}
+              <div className="form-group" style={{ margin: 0, minWidth: 0 }}>
+                <label className="form-label" style={{ fontWeight: 800, fontSize: '0.76rem', display: 'flex', alignItems: 'center', gap: '4px', margin: '0 0 4px 0' }}>
+                  <UserCheck size={12} />
                   <span>Operator Name *</span>
                 </label>
                 <select
                   className="touch-select"
                   style={{
-                    borderColor: 'var(--clr-primary)',
+                    minWidth: 0,
+                    width: '100%',
+                    height: '42px',
                     fontWeight: 700,
                     fontSize: '0.85rem',
-                    height: '46px',
-                    background: 'var(--bg-surface)',
-                    minWidth: 0,
-                    width: '100%'
+                    boxSizing: 'border-box',
+                    padding: '0 8px',
+                    borderRadius: '8px',
+                    background: 'var(--bg-surface)'
                   }}
                   value={operatorName}
                   onChange={(e) => setOperatorName(e.target.value)}
@@ -429,13 +701,26 @@ export default function ShiftSetupModal({
                 </select>
               </div>
 
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">{t('start_counter')} *</label>
+              {/* Start Counter */}
+              <div className="form-group" style={{ margin: 0, minWidth: 0 }}>
+                <label className="form-label" style={{ fontWeight: 800, fontSize: '0.76rem', margin: '0 0 4px 0' }}>
+                  <span>{t('start_counter')} *</span>
+                </label>
                 <input
                   type="text"
                   inputMode="numeric"
                   className="touch-input"
-                  style={{ minWidth: 0, width: '100%', height: '46px', fontSize: '0.95rem', fontWeight: 700 }}
+                  style={{
+                    minWidth: 0,
+                    width: '100%',
+                    height: '42px',
+                    fontSize: '0.90rem',
+                    fontWeight: 800,
+                    fontFamily: 'var(--font-mono)',
+                    boxSizing: 'border-box',
+                    padding: '0 8px',
+                    borderRadius: '8px'
+                  }}
                   value={startCounter}
                   onChange={(e) => setStartCounter(e.target.value.replace(/\D/g, ''))}
                   placeholder="e.g. 154200"
@@ -444,71 +729,69 @@ export default function ShiftSetupModal({
               </div>
             </div>
 
-            {/* STEP 3: Production Data Verification Card */}
-            <div style={{
-              padding: '10px 12px',
-              borderRadius: 'var(--r-md)',
-              border: `1px solid ${verification.isReady ? 'var(--clr-success)' : 'var(--clr-error)'}`,
-              background: verification.isReady ? 'var(--clr-success-lt)' : 'var(--clr-error-lt)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '6px'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {verification.isReady ? (
-                    <CheckCircle2 size={16} color="var(--clr-success)" />
-                  ) : (
-                    <AlertTriangle size={16} color="var(--clr-error)" />
-                  )}
-                  <span style={{
+            {/* Production Data Readiness Verification Status */}
+            <div
+              style={{
+                padding: '8px 10px',
+                borderRadius: '8px',
+                border: `1px solid ${verification.isReady ? 'var(--clr-success)' : 'var(--clr-error)'}`,
+                background: verification.isReady ? 'var(--clr-success-lt)' : 'var(--clr-error-lt)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px',
+                boxSizing: 'border-box'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                {verification.isReady ? (
+                  <CheckCircle2 size={16} color="var(--clr-success)" style={{ flexShrink: 0 }} />
+                ) : (
+                  <AlertTriangle size={16} color="var(--clr-error)" style={{ flexShrink: 0 }} />
+                )}
+                <span
+                  style={{
                     fontWeight: 800,
-                    fontSize: '0.82rem',
-                    color: verification.isReady ? 'var(--clr-success-dark)' : 'var(--clr-error-dark)'
-                  }}>
-                    {verification.statusText}
-                  </span>
-                </div>
-                <span className={`badge ${verification.isReady ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.62rem' }}>
-                  {verification.isReady ? 'PASSED' : 'BLOCKED'}
+                    fontSize: '0.78rem',
+                    color: verification.isReady ? 'var(--clr-success-dark)' : 'var(--clr-error-dark)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
+                  }}
+                >
+                  {verification.statusText}
                 </span>
               </div>
-
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                {verification.verifiedFields.map((f, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      fontSize: '0.64rem',
-                      padding: '3px 6px',
-                      borderRadius: 'var(--r-sm)',
-                      background: f.passed ? 'rgba(5, 150, 105, 0.15)' : 'rgba(220, 38, 38, 0.15)',
-                      border: `1px solid ${f.passed ? 'var(--clr-success)' : 'var(--clr-error)'}`,
-                      color: f.passed ? 'var(--clr-success-dark)' : 'var(--clr-error-dark)',
-                      fontWeight: 700,
-                      textAlign: 'center',
-                      flex: '1 1 calc(33.333% - 4px)',
-                      minWidth: '85px',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis'
-                    }}
-                  >
-                    {f.passed ? '✓' : '✗'} {f.name}
-                  </div>
-                ))}
-              </div>
+              <span className={`badge ${verification.isReady ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.62rem', flexShrink: 0 }}>
+                {verification.isReady ? 'READY' : 'BLOCKED'}
+              </span>
             </div>
           </div>
 
-          <div className="modal-footer">
-            <button type="button" className="btn btn-outline" style={{ flex: 1 }} onClick={onClose}>
+          {/* Modal Footer */}
+          <div
+            className="modal-footer"
+            style={{
+              padding: '10px 16px',
+              borderTop: '1px solid var(--clr-border)',
+              display: 'flex',
+              gap: '10px',
+              background: 'var(--bg-surface2)',
+              boxSizing: 'border-box'
+            }}
+          >
+            <button
+              type="button"
+              className="btn btn-outline"
+              style={{ flex: 1, height: '44px', fontWeight: 700 }}
+              onClick={onClose}
+            >
               {t('btn_cancel')}
             </button>
             <button
               type="submit"
               className="btn btn-primary"
-              style={{ flex: 2 }}
+              style={{ flex: 2, height: '44px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
               disabled={!verification.isReady}
             >
               <ArrowRight size={18} />

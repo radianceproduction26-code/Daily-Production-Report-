@@ -29,18 +29,11 @@ export default function Header({
 }) {
   const { toggleLanguage } = useI18n();
 
-  const desktopNavItems = [
+  const navItems = [
     { id: 'console', icon: Factory, label: 'Shifts' },
     { id: 'mastersheet', icon: FileSpreadsheet, label: 'Master Sheet' },
     { id: 'dashboard', icon: BarChart3, label: 'Dashboard' },
     { id: 'part-master', icon: Layers, label: 'Part Master' },
-    { id: 'settings', icon: Settings, label: 'Settings' }
-  ];
-
-  const mobileNavItems = [
-    { id: 'console', icon: Factory, label: 'Shifts' },
-    { id: 'dashboard', icon: BarChart3, label: 'Dashboard' },
-    { id: 'mastersheet', icon: FileSpreadsheet, label: 'Master Sheet' },
     { id: 'settings', icon: Settings, label: 'Settings' }
   ];
 
@@ -54,20 +47,17 @@ export default function Header({
           <Logo height={44} variant="default" style={{ height: '44px', maxHeight: '48px' }} />
         </div>
 
-        {/* Desktop navigation pills (visible on >= 641px screens like laptop) */}
-        <div className="nav-pills hide-on-mobile">
-          {desktopNavItems.map(item => (
+        {/* Navigation pills — Always visible across desktop, tablet, and mobile */}
+        <div className="nav-pills">
+          {navItems.map(item => (
             <button
               key={item.id}
               type="button"
               className={`nav-pill-btn${activeTab === item.id ? ' active' : ''}`}
               onClick={() => setActiveTab(item.id)}
             >
-              <item.icon size={18} />
+              <item.icon size={16} />
               <span>{item.label}</span>
-              {item.id !== 'console' && !isSupervisorUnlocked && (
-                <Lock size={12} style={{ marginLeft: '4px', opacity: 0.65 }} />
-              )}
             </button>
           ))}
         </div>
@@ -75,13 +65,13 @@ export default function Header({
         {/* Top bar right: Language toggle + Supervisor button */}
         <div className="topbar-actions">
 
-          {/* If Supervisor is unlocked, show Lock button to lock back to Operator mode */}
+          {/* If Supervisor is unlocked, show Lock button */}
           {isSupervisorUnlocked && onLockSupervisor && (
             <button
               type="button"
               className="btn btn-outline"
               onClick={onLockSupervisor}
-              title="Supervisor mode active. Click to lock back to Operator Shifts mode."
+              title="Supervisor mode active"
               style={{
                 height: '34px',
                 padding: '0 10px',
@@ -109,7 +99,7 @@ export default function Header({
             <Globe size={15} />
           </button>
 
-          {/* Supervisor button with clear Male Person Icon */}
+          {/* Supervisor button with Male Person Icon */}
           <div
             className="role-pill-selector"
             title="Active Supervisor"
@@ -125,7 +115,6 @@ export default function Header({
               borderRadius: 'var(--r-full)'
             }}
           >
-            {/* Male Person Icon */}
             <svg
               width="15"
               height="15"
@@ -166,9 +155,9 @@ export default function Header({
         </div>
       </header>
 
-      {/* ── BOTTOM NAVIGATION BAR (mobile only — hidden ≥641px via CSS) ── */}
+      {/* ── BOTTOM NAVIGATION BAR (mobile only) ── */}
       <nav className="bottom-nav" role="navigation" aria-label="Main Navigation">
-        {mobileNavItems.slice(0, 2).map(item => (
+        {navItems.map(item => (
           <button
             key={item.id}
             type="button"
@@ -176,56 +165,8 @@ export default function Header({
             onClick={() => setActiveTab(item.id)}
             aria-label={item.label}
           >
-            <item.icon size={22} />
-            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
-              {item.label}
-              {item.id !== 'console' && !isSupervisorUnlocked && (
-                <Lock size={10} style={{ opacity: 0.65 }} />
-              )}
-            </span>
-          </button>
-        ))}
-
-        {/* Centre FAB — New Shift */}
-        <div className="bnav-fab">
-          {(currentUser?.role === 'operator' || currentUser?.role === 'supervisor' || currentUser?.role === 'admin') ? (
-            <button
-              type="button"
-              className="bnav-fab-btn"
-              onClick={onOpenNewShiftModal}
-              aria-label="New Shift"
-            >
-              <Plus size={24} />
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="bnav-fab-btn"
-              onClick={() => setActiveTab('dashboard')}
-              aria-label="Dashboard"
-              style={{ background: 'var(--text3)' }}
-            >
-              <BarChart3 size={22} />
-            </button>
-          )}
-          <span className="bnav-fab-label">New Shift</span>
-        </div>
-
-        {mobileNavItems.slice(2, 4).map(item => (
-          <button
-            key={item.id}
-            type="button"
-            className={`bnav-item${activeTab === item.id ? ' active' : ''}`}
-            onClick={() => setActiveTab(item.id)}
-            aria-label={item.label}
-          >
-            <item.icon size={22} />
-            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
-              {item.label}
-              {item.id !== 'console' && !isSupervisorUnlocked && (
-                <Lock size={10} style={{ opacity: 0.65 }} />
-              )}
-            </span>
+            <item.icon size={20} />
+            <span style={{ fontSize: '9px', fontWeight: activeTab === item.id ? 800 : 600 }}>{item.label}</span>
           </button>
         ))}
       </nav>

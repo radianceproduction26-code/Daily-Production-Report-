@@ -98,21 +98,14 @@ export default function App() {
   const [setupTargetMachine, setSetupTargetMachine] = useState('MC03');
 
   // Dynamically resolve activeReport for the selected machine from the shift reports list
+  // Once a report is submitted, it is no longer shown on the live Shifts console (only live running shifts are seen)
   const activeReport = React.useMemo(() => {
-    // 1. Look for unsubmitted (draft/active/unlocked) report for selectedMachineNumber
-    const draft = reports.find(
+    const liveReport = reports.find(
       r => (r.machineNumber === selectedMachineNumber || (r.machine && r.machine.machineNumber === selectedMachineNumber)) &&
+           r.status !== 'submitted' && r.status !== 'approved' &&
            (r.status === 'draft' || r.status === 'active' || r.status === 'unlocked')
     );
-    if (draft) return draft;
-
-    // 2. Look for most recent report for selectedMachineNumber
-    const latestForMc = reports.find(
-      r => r.machineNumber === selectedMachineNumber || (r.machine && r.machine.machineNumber === selectedMachineNumber)
-    );
-    if (latestForMc) return latestForMc;
-
-    return null;
+    return liveReport || null;
   }, [reports, selectedMachineNumber]);
 
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
@@ -254,17 +247,7 @@ export default function App() {
   const [pendingTab, setPendingTab] = useState(null);
 
   const handleTabChange = (targetTab) => {
-    if (targetTab === 'console') {
-      setActiveTab('console');
-      return;
-    }
-
-    if (isSupervisorUnlocked) {
-      setActiveTab(targetTab);
-    } else {
-      setPendingTab(targetTab);
-      setPasswordModalOpen(true);
-    }
+    setActiveTab(targetTab);
   };
 
   const handleUnlockSupervisor = () => {
@@ -889,6 +872,7 @@ export default function App() {
           machinesList={machines}
           mouldsList={moulds}
           partsList={parts}
+          mappingsList={mappings}
           currentUser={currentUser}
           onCreateShift={handleCreateNewShift}
           initialMachineNumber={setupTargetMachine}

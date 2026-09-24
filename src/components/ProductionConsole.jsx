@@ -66,28 +66,23 @@ export default function ProductionConsole({
   }, [machines]);
 
   // 2. Map running reports for each machine
+  // Once a report is submitted, it is no longer shown on the live Shifts console (only live running shifts are seen)
   const machineShiftMap = useMemo(() => {
     const map = {};
     fleetMachines.forEach(m => {
       const mcNum = m.machineNumber;
-      // Look for active/draft report first
+      // Strictly find unsubmitted active/draft/unlocked report for this machine
       const running = reports.find(
         r => (r.machineNumber === mcNum || (r.machine && r.machine.machineNumber === mcNum)) &&
+             r.status !== 'submitted' && r.status !== 'approved' &&
              (r.status === 'draft' || r.status === 'active' || r.status === 'unlocked')
       );
-      if (running) {
-        map[mcNum] = running;
-      } else {
-        // Fallback to most recent report for this machine
-        map[mcNum] = reports.find(
-          r => r.machineNumber === mcNum || (r.machine && r.machine.machineNumber === mcNum)
-        ) || null;
-      }
+      map[mcNum] = running || null;
     });
     return map;
   }, [fleetMachines, reports]);
 
-  // Fleet running summary stats
+  // Fleet running summary stats (calculated strictly for currently LIVE running shifts)
   const fleetSummary = useMemo(() => {
     let runningCount = 0;
     let totalProd = 0;
@@ -96,10 +91,8 @@ export default function ProductionConsole({
 
     fleetMachines.forEach(m => {
       const rep = machineShiftMap[m.machineNumber];
-      if (rep && rep.status !== 'approved') {
+      if (rep && (rep.status === 'draft' || rep.status === 'active' || rep.status === 'unlocked')) {
         runningCount++;
-      }
-      if (rep) {
         const sessions = rep.mouldSessions || [];
         sessions.forEach(s => {
           (s.entries || []).forEach(e => {
@@ -287,7 +280,7 @@ export default function ProductionConsole({
           {fleetMachines.map(m => {
             const mcNum = m.machineNumber;
             const rep = machineShiftMap[mcNum];
-            const isRunning = rep && rep.status !== 'approved';
+            const isRunning = Boolean(rep && (rep.status === 'draft' || rep.status === 'active' || rep.status === 'unlocked') && rep.status !== 'submitted' && rep.status !== 'approved');
             const isSelected = selectedMachineNumber === mcNum;
 
             // Stats for this machine
