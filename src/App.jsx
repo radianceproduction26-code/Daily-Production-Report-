@@ -833,6 +833,8 @@ export default function App() {
           activeSession={getActiveSession()}
           mouldsList={moulds}
           partsList={parts}
+          mappingsList={mappings}
+          machineNumber={activeReport?.machineNumber || selectedMachineNumber}
           onExecuteMouldChange={handleExecuteMouldChange}
           initialHourIndex={mouldChangeHourIndex}
         />

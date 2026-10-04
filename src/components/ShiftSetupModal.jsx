@@ -17,8 +17,11 @@ import { useI18n } from '../i18n/I18nContext';
 import {
   verifyProductionDataReadiness,
   getOperators,
+  getParts,
   getMachinePartMappings,
-  normalizeMachineCode
+  normalizeMachineCode,
+  normalizeMachineCodes,
+  isPartAllocatedToMachine
 } from '../services/storageService';
 import { INITIAL_OPERATORS, INITIAL_MACHINE_PART_MAPPINGS } from '../data/seedData';
 
@@ -85,50 +88,37 @@ export default function ShiftSetupModal({
   });
   const [startCounter, setStartCounter] = useState('154200');
 
-  // Master Parts List (Guaranteed uploaded parts without deleted MC03 parts)
+  // Master Parts List (All active parts from props or storage)
   const effectivePartsList = useMemo(() => {
-    if (partsList && partsList.length > 0) {
-      const DELETED_MC03_PARTS = new Set(['F53200000A', '5036677', '5012394']);
-      return partsList.filter(p => {
-        const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
-        return !DELETED_MC03_PARTS.has(code);
-      });
-    }
-    return [];
+    const rawList = (partsList && partsList.length > 0) ? partsList : getParts();
+    return Array.isArray(rawList) ? rawList.filter(p => p && p.status !== 'inactive') : [];
   }, [partsList]);
 
-  // Active Machine-Part Mappings (from props or storage or seed)
+  // Active Machine-Part Mappings (merging props and latest storage)
   const effectiveMappings = useMemo(() => {
-    if (mappingsList && mappingsList.length > 0) return mappingsList;
-    try {
-      const stored = getMachinePartMappings();
-      if (Array.isArray(stored) && stored.length > 0) return stored;
-    } catch (e) {}
-    return INITIAL_MACHINE_PART_MAPPINGS;
+    const stored = getMachinePartMappings();
+    const list = (mappingsList && mappingsList.length > 0) ? mappingsList : stored;
+    const map = new Map();
+    (stored || []).forEach(m => {
+      const key = `${normalizeMachineCode(m.machineCode || m.machineNumber)}__${(m.partCode || m.partNumber || '').trim().toUpperCase()}`;
+      map.set(key, m);
+    });
+    (list || []).forEach(m => {
+      const key = `${normalizeMachineCode(m.machineCode || m.machineNumber)}__${(m.partCode || m.partNumber || '').trim().toUpperCase()}`;
+      map.set(key, m);
+    });
+    return Array.from(map.values());
   }, [mappingsList]);
 
-  // Filter parts strictly for the selected machine based on sheet mappings
+  // Filter parts strictly for the selected machine based on sheet mappings and allocated machines
   const machineLinkedParts = useMemo(() => {
-    const selMc = normalizeMachineCode(selectedMachineNumber || 'MC04');
-    const linkedCodes = new Set();
+    const selMc = normalizeMachineCode(selectedMachineNumber || initialMachineNumber || 'MC03');
 
-    effectiveMappings.forEach(m => {
-      const mcNum = normalizeMachineCode(m.machineCode || m.machineNumber || '');
-      if (mcNum === selMc && m.approvedToRun !== false && m.isApproved !== false && m.status !== 'inactive') {
-        const pCode = (m.partCode || m.partNumber || '').trim().toUpperCase();
-        if (pCode) linkedCodes.add(pCode);
-      }
+    // Filter parts: a part belongs to this machine if it is allocated in the uploaded sheet or mapped
+    return effectivePartsList.filter(part => {
+      return isPartAllocatedToMachine(part, selMc, effectiveMappings);
     });
-
-    if (effectiveMappings && effectiveMappings.length > 0) {
-      return effectivePartsList.filter(p => {
-        const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
-        return linkedCodes.has(code);
-      });
-    }
-
-    return [];
-  }, [selectedMachineNumber, effectiveMappings, effectivePartsList]);
+  }, [selectedMachineNumber, initialMachineNumber, effectiveMappings, effectivePartsList]);
 
   const [partId, setPartId] = useState('');
 

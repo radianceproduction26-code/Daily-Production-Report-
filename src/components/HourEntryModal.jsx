@@ -11,7 +11,7 @@ import {
   Check
 } from 'lucide-react';
 import { validateHourlyEntry, calculateTheoreticalHourlyTarget } from '../services/validationEngine';
-import { generateNextRejectionCode, generateNextDowntimeCode } from '../services/storageService';
+import { generateNextRejectionCode, generateNextDowntimeCode, getParts, isPartAllocatedToMachine } from '../services/storageService';
 import { useI18n } from '../i18n/I18nContext';
 
 /* ─── Tiny scoped style helpers ────────────────────────────────── */
@@ -162,15 +162,15 @@ export default function HourEntryModal({
     setCurrentSession(activeSession);
   }, [activeSession?.id, activeSession?.mouldNumber]);
 
-  // Available tools/moulds from partsList
+  // Available tools/moulds strictly allocated to this machine
   const availableMoulds = React.useMemo(() => {
-    if (partsList && partsList.length > 0) return partsList;
-    return [
-      { id: 'part-mc03-1', partNumber: 'F53200000A', partCode: 'F53200000A', partName: 'Front Bezel Enclosure', customer: 'Schneider Electric', standardCycleTimeSeconds: 20, cavityCount: 2, rawMaterialGrade: 'PPCP' },
-      { id: 'part-mc03-2', partNumber: '5036677', partCode: '5036677', partName: 'Terminal Cover Plate', customer: 'Bosch Automotive', standardCycleTimeSeconds: 15, cavityCount: 4, rawMaterialGrade: 'Nylon 6' },
-      { id: 'part-mc03-3', partNumber: '5012394', partCode: '5012394', partName: 'Switch Housing Bracket', customer: 'Tata Motors', standardCycleTimeSeconds: 25, cavityCount: 2, rawMaterialGrade: 'ABS' }
-    ];
-  }, [partsList]);
+    const currentMc = activeReport?.machineNumber || activeReport?.machine?.machineNumber || 'MC03';
+    const effectiveList = (partsList && partsList.length > 0) ? partsList : getParts();
+    const machineAllocated = (effectiveList || []).filter(p =>
+      p && p.status !== 'inactive' && isPartAllocatedToMachine(p, currentMc)
+    );
+    return machineAllocated.length > 0 ? machineAllocated : effectiveList;
+  }, [partsList, activeReport?.machineNumber]);
 
   // Default picked mould to one of the other 2 moulds
   const otherMoulds = availableMoulds.filter(m => (m.partNumber || m.partCode) !== (currentSession?.partNumber || currentSession?.mouldNumber));

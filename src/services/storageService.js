@@ -1354,16 +1354,63 @@ export function saveUnifiedMasterData({ parts = [], machines = [], mappings = []
   if (syncToCloud) syncMasterDataToCloudBackground();
 }
 
-export function getApprovedPartsForMachine(machineCode) {
-  const mappings = getMachinePartMappings();
-  return mappings
-    .filter(m => m.machineCode === machineCode && (m.approvedToRun || m.isApproved))
-    .map(m => m.partCode);
+export function isPartAllocatedToMachine(part, machineCode, mappings = null) {
+  if (!part || !machineCode) return false;
+  const targetMc = normalizeMachineCode(machineCode);
+  const pNum = (part.partNumber || '').trim().toUpperCase();
+  const pCode = (part.partCode || '').trim().toUpperCase();
+  const pId = (part.id || '').replace(/^part-/, '').trim().toUpperCase();
+
+  const effectiveMappings = Array.isArray(mappings) ? mappings : getMachinePartMappings();
+
+  // 1. Check if explicitly mapped to this machine in mappings
+  const hasMapping = effectiveMappings.some(m => {
+    const mc = normalizeMachineCode(m.machineCode || m.machineNumber || '');
+    if (mc !== targetMc) return false;
+    if (m.approvedToRun === false || m.isApproved === false || m.status === 'inactive') return false;
+    const mPart = (m.partCode || m.partNumber || '').trim().toUpperCase();
+    return mPart === pNum || mPart === pCode || mPart === pId;
+  });
+  if (hasMapping) return true;
+
+  // 2. Check if the part record has machine allocated from the uploaded Excel sheet
+  const rawMachine = part.machineNumber || part.machineCode || part.machine || part.line || part.press || '';
+  if (rawMachine) {
+    const targetCodes = normalizeMachineCodes(rawMachine);
+    if (targetCodes.includes(targetMc)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
-export function isPartApprovedForMachine(machineCode, partCode) {
-  const mappings = getMachinePartMappings();
-  return mappings.some(m => m.machineCode === machineCode && m.partCode === partCode && (m.approvedToRun || m.isApproved));
+export function getApprovedPartsForMachine(machineCode, parts = null, mappings = null) {
+  const targetMc = normalizeMachineCode(machineCode);
+  const effectiveParts = Array.isArray(parts) ? parts : getParts();
+  const effectiveMappings = Array.isArray(mappings) ? mappings : getMachinePartMappings();
+
+  return effectiveParts.filter(p => isPartAllocatedToMachine(p, targetMc, effectiveMappings));
+}
+
+export function isPartApprovedForMachine(machineCode, partCode, mappings = null) {
+  const targetMc = normalizeMachineCode(machineCode);
+  const pStr = (partCode || '').trim().toUpperCase();
+  const parts = getParts();
+  const part = parts.find(p => {
+    const pNum = (p.partNumber || '').trim().toUpperCase();
+    const pCd = (p.partCode || '').trim().toUpperCase();
+    return pNum === pStr || pCd === pStr;
+  });
+  if (part) {
+    return isPartAllocatedToMachine(part, targetMc, mappings);
+  }
+  const effectiveMappings = Array.isArray(mappings) ? mappings : getMachinePartMappings();
+  return effectiveMappings.some(m => {
+    const mc = normalizeMachineCode(m.machineCode || m.machineNumber || '');
+    const mPart = (m.partCode || m.partNumber || '').trim().toUpperCase();
+    return mc === targetMc && mPart === pStr && m.approvedToRun !== false && m.isApproved !== false;
+  });
 }
 
 // Supervisor Master - Strictly Mr. Lokesh and Mr. Akshay

@@ -12,7 +12,7 @@ import {
 import TouchNumpad from './TouchNumpad';
 import { calculateTheoreticalHourlyTarget } from '../services/validationEngine';
 import { useI18n } from '../i18n/I18nContext';
-import { getOperators } from '../services/storageService';
+import { getOperators, getParts, isPartAllocatedToMachine } from '../services/storageService';
 import { INITIAL_OPERATORS, SHIFT_HOURS_DEFINITIONS } from '../data/seedData';
 
 export default function MouldChangeModal({
@@ -21,6 +21,8 @@ export default function MouldChangeModal({
   activeSession,
   mouldsList = [],
   partsList = [],
+  mappingsList = [],
+  machineNumber = null,
   onExecuteMouldChange,
   initialHourIndex = null
 }) {
@@ -36,18 +38,20 @@ export default function MouldChangeModal({
   );
   const [endReason, setEndReason] = useState('Production order target achieved');
 
-  // Filter available parts excluding the currently running part
-  const eligibleParts = (partsList || []).filter(p => 
-    p.status !== 'inactive' &&
+  // Filter available parts strictly allocated to this machine, excluding current running part
+  const currentMc = machineNumber || activeSession?.machineNumber || activeSession?.machineCode || activeSession?.machine || 'MC03';
+  const effectiveParts = (partsList && partsList.length > 0) ? partsList : getParts();
+  const machineParts = (effectiveParts || []).filter(p =>
+    p && p.status !== 'inactive' && isPartAllocatedToMachine(p, currentMc, mappingsList)
+  );
+
+  const eligibleParts = machineParts.filter(p =>
     (p.partCode !== activeSession.partNumber && p.partNumber !== activeSession.partNumber)
   );
-  const displayParts = eligibleParts.length > 0 
-    ? eligibleParts 
-    : (partsList && partsList.length > 0 ? partsList : [
-        { id: 'part-01', partNumber: 'F53200000A', partCode: 'F53200000A', partName: 'Front Bezel Enclosure', customer: 'Schneider Electric', standardCycleTimeSeconds: 20.0, cavityCount: 2, rawMaterialGrade: 'PPCP' },
-        { id: 'part-02', partNumber: '5036677', partCode: '5036677', partName: 'Terminal Cover Plate', customer: 'Bosch Automotive', standardCycleTimeSeconds: 15.0, cavityCount: 4, rawMaterialGrade: 'Nylon 6' },
-        { id: 'part-03', partNumber: '5012394', partCode: '5012394', partName: 'Switch Housing Bracket', customer: 'Tata Motors', standardCycleTimeSeconds: 25.0, cavityCount: 2, rawMaterialGrade: 'ABS' }
-      ]);
+
+  const displayParts = eligibleParts.length > 0
+    ? eligibleParts
+    : (machineParts.length > 0 ? machineParts : effectiveParts);
 
   const operatorsList = React.useMemo(() => {
     try {
