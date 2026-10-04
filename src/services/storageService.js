@@ -230,13 +230,39 @@ export function initializeStorage() {
     localStorage.setItem(REASONS_CLEARED_FLAG, 'true');
   }
 
-  // Permanent Master Data Guarantee:
-  // If parts or machines exist, preserve them permanently. If empty, ensure initial master is populated.
+  // Master Data Initialization and MC03 Parts Purge:
   try {
-    const existingParts = JSON.parse(localStorage.getItem(KEYS.PARTS) || '[]');
-    if (!existingParts || existingParts.length === 0) {
+    const rawParts = localStorage.getItem(KEYS.PARTS);
+    if (!rawParts) {
       localStorage.setItem(KEYS.PARTS, JSON.stringify(INITIAL_PARTS));
+    } else {
+      const parsedParts = JSON.parse(rawParts);
+      if (Array.isArray(parsedParts)) {
+        const DELETED_MC03_PARTS = new Set(['F53200000A', '5036677', '5012394']);
+        const cleanedParts = parsedParts.filter(p => {
+          const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
+          return !DELETED_MC03_PARTS.has(code);
+        });
+        localStorage.setItem(KEYS.PARTS, JSON.stringify(cleanedParts));
+      }
     }
+
+    const rawMaps = localStorage.getItem(KEYS.MACHINE_PART_MAPPINGS);
+    if (!rawMaps) {
+      localStorage.setItem(KEYS.MACHINE_PART_MAPPINGS, JSON.stringify(INITIAL_MACHINE_PART_MAPPINGS));
+    } else {
+      const parsedMaps = JSON.parse(rawMaps);
+      if (Array.isArray(parsedMaps)) {
+        const DELETED_MC03_PARTS = new Set(['F53200000A', '5036677', '5012394']);
+        const cleanedMaps = parsedMaps.filter(m => {
+          const mc = normalizeMachineCode(m.machineCode || m.machineNumber || '');
+          const pCode = (m.partCode || m.partNumber || '').trim().toUpperCase();
+          return mc !== 'MC03' && !DELETED_MC03_PARTS.has(pCode);
+        });
+        localStorage.setItem(KEYS.MACHINE_PART_MAPPINGS, JSON.stringify(cleanedMaps));
+      }
+    }
+
     const existingMachines = JSON.parse(localStorage.getItem(KEYS.MACHINES) || '[]');
     if (!existingMachines || existingMachines.length === 0) {
       localStorage.setItem(KEYS.MACHINES, JSON.stringify(INITIAL_MACHINES));
@@ -390,10 +416,20 @@ export function createDemoShiftReport() {
   const session1Id = 'sess-mc03-01';
   const session2Id = 'sess-mc03-02';
 
-  const part1 = INITIAL_PARTS[0]; // F53200000A (2 cavity, 20s)
+  const part1 = INITIAL_PARTS[0] || {
+    id: 'part-demo-01',
+    partNumber: 'DEMO-PART-1',
+    standardCycleTimeSeconds: 20.0,
+    cavityCount: 2
+  };
   const target1 = calculateTheoreticalHourlyTarget(part1.standardCycleTimeSeconds, part1.cavityCount);
 
-  const part2 = INITIAL_PARTS[1]; // 5036677 (4 cavity, 15s)
+  const part2 = INITIAL_PARTS[1] || {
+    id: 'part-demo-02',
+    partNumber: 'DEMO-PART-2',
+    standardCycleTimeSeconds: 15.0,
+    cavityCount: 4
+  };
   const target2 = calculateTheoreticalHourlyTarget(part2.standardCycleTimeSeconds, part2.cavityCount);
 
   // Session 1: 08:00 to 13:00 (Hours 1 to 5)
@@ -860,11 +896,7 @@ export function saveMoulds(moulds) {
 
 export function getParts() {
   const partsMap = new Map();
-  // 1. Strictly restore exact previous MC03 parts from INITIAL_PARTS
-  INITIAL_PARTS.forEach(p => {
-    const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
-    if (code) partsMap.set(code, { ...p });
-  });
+  const DELETED_MC03_PARTS = new Set(['F53200000A', '5036677', '5012394']);
 
   if (typeof localStorage !== 'undefined') {
     const data = localStorage.getItem(KEYS.PARTS);
@@ -872,20 +904,11 @@ export function getParts() {
       try {
         const stored = JSON.parse(data);
         if (Array.isArray(stored)) {
-          const mc03PartCodes = new Set(['F53200000A', '5036677', '5012394']);
           stored.forEach(p => {
             const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
-            if (!code) return;
-            if (mc03PartCodes.has(code)) {
-              const base = INITIAL_PARTS.find(bp => bp.partNumber === code || bp.partCode === code);
-              partsMap.set(code, {
-                ...base,
-                actualCycleTimeSeconds: p.actualCycleTimeSeconds || base.actualCycleTimeSeconds
-              });
-            } else {
-              // Parts for other machines (MC04, MC05, MC06) preserved as is
-              partsMap.set(code, p);
-            }
+            if (!code || DELETED_MC03_PARTS.has(code)) return;
+            // Parts for other machines (MC04, MC05, MC06) preserved as is
+            partsMap.set(code, p);
           });
         }
       } catch (e) {
@@ -899,26 +922,12 @@ export function getParts() {
 export function saveParts(parts) {
   if (typeof localStorage !== 'undefined') {
     const partsMap = new Map();
-    const mc03PartCodes = new Set(['F53200000A', '5036677', '5012394']);
-
-    // 1. Strictly guarantee base 3 parts for MC03 are restored exact
-    INITIAL_PARTS.forEach(p => {
-      const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
-      if (code) partsMap.set(code, { ...p });
-    });
+    const DELETED_MC03_PARTS = new Set(['F53200000A', '5036677', '5012394']);
 
     (parts || []).forEach(p => {
       const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
-      if (!code) return;
-      if (mc03PartCodes.has(code)) {
-        const base = INITIAL_PARTS.find(bp => bp.partNumber === code || bp.partCode === code);
-        partsMap.set(code, {
-          ...base,
-          actualCycleTimeSeconds: p.actualCycleTimeSeconds || base.actualCycleTimeSeconds
-        });
-      } else {
-        partsMap.set(code, p);
-      }
+      if (!code || DELETED_MC03_PARTS.has(code)) return;
+      partsMap.set(code, p);
     });
     localStorage.setItem(KEYS.PARTS, JSON.stringify(Array.from(partsMap.values())));
   }
@@ -1116,29 +1125,15 @@ export function saveMaterials(materials) {
   localStorage.setItem(KEYS.MATERIALS, JSON.stringify(materials));
 }
 
-// Machine-Part Mappings (strictly MC03 to MC06 -> Part Codes)
+// Machine-Part Mappings (strictly MC04 to MC06 -> Part Codes; MC03 parts deleted)
 export function getMachinePartMappings() {
   const FLEET_CODES = ['MC04', 'MC05', 'MC06'];
-  const BASE_MC03_PARTS = ['F53200000A', '5036677', '5012394'];
+  const DELETED_MC03_PARTS = new Set(['F53200000A', '5036677', '5012394']);
 
   const map = new Map();
 
-  // 1. Machine 3 (MC03) MUST STRICTLY have ONLY its exact previous 3 mapped parts
-  BASE_MC03_PARTS.forEach(pCode => {
-    map.set(`MC03__${pCode}`, {
-      id: `map-mc03-${pCode.toLowerCase()}`,
-      machineCode: 'MC03',
-      machineNumber: 'MC03',
-      partCode: pCode,
-      partNumber: pCode,
-      mouldNumber: `MLD-${pCode}`,
-      approvedToRun: true,
-      isApproved: true,
-      status: 'active'
-    });
-  });
-
-  // 2. Load stored mappings for MC04, MC05, MC06 (strictly ignore any extra MC03 entries in stored)
+  // Machine 3 (MC03) has NO parts mapped (deleted as requested)
+  // Load stored mappings for MC04, MC05, MC06 only
   if (typeof localStorage !== 'undefined') {
     const data = localStorage.getItem(KEYS.MACHINE_PART_MAPPINGS);
     if (data) {
@@ -1148,11 +1143,11 @@ export function getMachinePartMappings() {
           stored.forEach(m => {
             const rawMc = m.machineCode || m.machineNumber || '';
             const normMc = normalizeMachineCode(rawMc);
-            // Strictly exclude any extra/mistaken mappings for MC03 - MC03 is strictly the original 3 parts!
+            // Strictly exclude MC03
             if (normMc === 'MC03') return;
 
             const pCode = (m.partCode || m.partNumber || '').trim().toUpperCase();
-            if (!FLEET_CODES.includes(normMc) || !pCode) return;
+            if (!FLEET_CODES.includes(normMc) || !pCode || DELETED_MC03_PARTS.has(pCode)) return;
 
             const key = `${normMc}__${pCode}`;
             map.set(key, {
@@ -1180,33 +1175,19 @@ export function getMachinePartMappings() {
 export function saveMachinePartMappings(mappings) {
   if (typeof localStorage !== 'undefined') {
     const FLEET_CODES = ['MC04', 'MC05', 'MC06'];
-    const BASE_MC03_PARTS = ['F53200000A', '5036677', '5012394'];
+    const DELETED_MC03_PARTS = new Set(['F53200000A', '5036677', '5012394']);
 
     const map = new Map();
 
-    // 1. Strictly restore exact previous 3 mapped parts for MC03
-    BASE_MC03_PARTS.forEach(pCode => {
-      map.set(`MC03__${pCode}`, {
-        id: `map-mc03-${pCode.toLowerCase()}`,
-        machineCode: 'MC03',
-        machineNumber: 'MC03',
-        partCode: pCode,
-        partNumber: pCode,
-        mouldNumber: `MLD-${pCode}`,
-        approvedToRun: true,
-        isApproved: true,
-        status: 'active'
-      });
-    });
-
-    // 2. Add / update mappings for MC04, MC05, MC06 (skip any MC03 in incoming mappings)
+    // Machine 3 (MC03) has NO parts mapped (deleted as requested)
+    // Strictly add / update mappings for MC04, MC05, MC06
     (mappings || []).forEach(m => {
       const rawMc = m.machineCode || m.machineNumber || '';
       const normMc = normalizeMachineCode(rawMc);
-      if (normMc === 'MC03') return; // MC03 strictly locked to exact previous 3 parts
+      if (normMc === 'MC03') return; // MC03 has 0 parts
 
       const pCode = (m.partCode || m.partNumber || '').trim().toUpperCase();
-      if (!FLEET_CODES.includes(normMc) || !pCode) return;
+      if (!FLEET_CODES.includes(normMc) || !pCode || DELETED_MC03_PARTS.has(pCode)) return;
 
       const key = `${normMc}__${pCode}`;
       map.set(key, {
@@ -1230,33 +1211,21 @@ export function saveMachinePartMappings(mappings) {
 export function saveUnifiedMasterData({ parts = [], machines = [], mappings = [] }) {
   if (typeof localStorage !== 'undefined') {
     if (parts.length > 0) {
-      // Preserve the 3 foundational parts (F53200000A, 5036677, 5012394) and merge with uploaded parts
+      const DELETED_MC03_PARTS = new Set(['F53200000A', '5036677', '5012394']);
       const currentParts = getParts();
       const partsMap = new Map();
 
-      // 1. Put initial 3 parts
-      INITIAL_PARTS.forEach(p => {
-        const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
-        if (code) partsMap.set(code, p);
-      });
-
-      // 2. Put existing parts from storage
+      // Put existing parts from storage
       currentParts.forEach(p => {
         const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
-        if (code) partsMap.set(code, p);
+        if (code && !DELETED_MC03_PARTS.has(code)) partsMap.set(code, p);
       });
 
-      // 3. Merge uploaded parts
-      const protected3 = new Set(['F53200000A', '5036677', '5012394']);
+      // Merge uploaded parts (excluding deleted MC03 parts)
       parts.forEach(p => {
         const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
-        if (!code) return;
-        if (protected3.has(code)) {
-          const existing = partsMap.get(code);
-          partsMap.set(code, { ...existing, ...p });
-        } else {
-          partsMap.set(code, p);
-        }
+        if (!code || DELETED_MC03_PARTS.has(code)) return;
+        partsMap.set(code, p);
       });
 
       localStorage.setItem(KEYS.PARTS, JSON.stringify(Array.from(partsMap.values())));
@@ -2970,15 +2939,12 @@ export function getMasterDataImportStatus({
 } = {}) {
   const currentMachines = machines.length > 0 ? machines : getMachines();
   const currentParts = parts.length > 0 ? parts : getParts();
-  const pilotParts = currentParts.filter(p => ['F53200000A', '5036677', '5012394'].includes(p.partNumber || p.partCode));
-
   const validMachines = currentMachines.filter(m => m.machineNumber && m.status === 'active');
-  const validParts = pilotParts.filter(p => 
+  const validParts = currentParts.filter(p => 
     (p.partNumber || p.partCode) && 
-    Number(p.standardCycleTimeSeconds) > 0 && 
-    Number(p.partWeightGrams) > 0 &&
-    Number(p.runnerWeightGrams) > 0
+    Number(p.standardCycleTimeSeconds) > 0
   );
+  const currentMappings = getMachinePartMappings();
 
   const activeSupervisors = ['Mr. Lokesh', 'Mr. Akshay'];
   const emailRecipients = emailConfig?.recipients || [
@@ -2996,25 +2962,25 @@ export function getMasterDataImportStatus({
       invalid: Math.max(0, currentMachines.length - validMachines.length),
       missing: 0,
       status: 'VALID',
-      note: 'MC03 locked as pilot machine'
+      note: 'Fleet configured (MC03 to MC06)'
     },
     partMaster: {
       category: 'Part Master Status',
-      imported: pilotParts.length,
+      imported: currentParts.length,
       valid: validParts.length,
-      invalid: Math.max(0, pilotParts.length - validParts.length),
+      invalid: Math.max(0, currentParts.length - validParts.length),
       missing: 0,
-      status: validParts.length === pilotParts.length ? 'VALID' : 'WARNING',
+      status: validParts.length === currentParts.length ? 'VALID' : 'WARNING',
       note: 'Operational tool master (Part = Tool)'
     },
     mappingStatus: {
       category: 'Machine-Part Mapping Status',
-      imported: 3,
-      valid: 3,
+      imported: currentMappings.length,
+      valid: currentMappings.length,
       invalid: 0,
       missing: 0,
       status: 'VALID',
-      note: '3 Parts mapped to MC03 (F53200000A, 5036677, 5012394)'
+      note: `${currentMappings.length} Parts mapped across plant fleet`
     },
     supervisorStatus: {
       category: 'Supervisor Status',

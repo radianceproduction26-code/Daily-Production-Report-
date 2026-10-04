@@ -60,8 +60,8 @@ assert.strictEqual(machines.length, 4, 'Exactly 4 machines returned');
 assert.deepStrictEqual(machines.map(m => m.machineNumber), ['MC03', 'MC04', 'MC05', 'MC06']);
 console.log('  ✓ Dirty storage with duplicate 4, 5, 6 cleaned up to strictly MC03-MC06\n');
 
-// 3. Test getMachinePartMappings() preserves MC03 base parts and normalizes 4, 5, 6
-console.log('Test 3: getMachinePartMappings() preserves MC03 base parts and adds new parts on MC04, MC05, MC06');
+// 3. Test getMachinePartMappings() has 0 parts for MC03 and normalizes 4, 5, 6
+console.log('Test 3: getMachinePartMappings() has 0 parts for MC03 and adds new parts on MC04, MC05, MC06');
 localStorage.clear();
 
 // User added new parts for machine no 4, 5, 6 (some with '4', '5', '6' codes)
@@ -75,12 +75,9 @@ saveMachinePartMappings(newMappings);
 
 const activeMappings = getMachinePartMappings();
 
-// Check MC03 base parts are 100% preserved
+// Check MC03 has 0 parts
 const mc03Parts = activeMappings.filter(m => m.machineCode === 'MC03').map(m => m.partCode);
-assert(mc03Parts.includes('F53200000A'), 'MC03 includes F53200000A');
-assert(mc03Parts.includes('5036677'), 'MC03 includes 5036677');
-assert(mc03Parts.includes('5012394'), 'MC03 includes 5012394');
-assert.strictEqual(mc03Parts.length, 3, 'MC03 has exactly its 3 baseline parts');
+assert.strictEqual(mc03Parts.length, 0, 'MC03 has strictly 0 parts');
 
 // Check MC04 has the new part normalized
 const mc04Parts = activeMappings.filter(m => m.machineCode === 'MC04').map(m => m.partCode);
@@ -100,7 +97,7 @@ assert(!rawMachineCodes.includes('4'), 'No raw machineCode 4');
 assert(!rawMachineCodes.includes('5'), 'No raw machineCode 5');
 assert(!rawMachineCodes.includes('6'), 'No raw machineCode 6');
 
-console.log('  ✓ MC03 previous mapped parts preserved as is');
+console.log('  ✓ MC03 has 0 mapped parts');
 console.log('  ✓ New parts for 4, 5, 6 correctly mapped to MC04, MC05, MC06\n');
 
 // 4. Test Excel Parsing with machine numbers 4, 5, 6
@@ -159,16 +156,13 @@ assert.strictEqual(afterUploadMachines.length, 4, 'Machines count is strictly 4'
 assert.deepStrictEqual(afterUploadMachines.map(m => m.machineNumber), ['MC03', 'MC04', 'MC05', 'MC06']);
 
 const mc03After = afterUploadMappings.filter(m => m.machineCode === 'MC03').map(m => m.partCode);
-assert(mc03After.includes('F53200000A'), 'MC03 still has F53200000A');
-assert(mc03After.includes('5036677'), 'MC03 still has 5036677');
-assert(mc03After.includes('5012394'), 'MC03 still has 5012394');
-assert.strictEqual(mc03After.length, 3, 'MC03 strictly has only its 3 baseline parts');
+assert.strictEqual(mc03After.length, 0, 'MC03 has strictly 0 parts');
 
 const mc04After = afterUploadMappings.filter(m => m.machineCode === 'MC04').map(m => m.partCode);
 assert(mc04After.includes('PART-A4'), 'MC04 has PART-A4');
 
-// 6. Test that any mistaken extra mappings for MC03 are discarded
-console.log('Test 6: Mistaken extra parts for MC03 are blocked, keeping MC03 exact');
+// 6. Test that any mistaken mappings for MC03 are blocked
+console.log('Test 6: Mistaken mappings for MC03 are blocked, keeping MC03 at 0 parts');
 const pollutedMappings = [
   { machineCode: 'MC03', partCode: 'WRONG-PART-ON-MC03', approvedToRun: true },
   { machineCode: '3', partCode: 'ANOTHER-WRONG-MC03', approvedToRun: true },
@@ -177,11 +171,10 @@ const pollutedMappings = [
 saveMachinePartMappings(pollutedMappings);
 const protectedMappings = getMachinePartMappings();
 const finalMC03Parts = protectedMappings.filter(m => m.machineCode === 'MC03').map(m => m.partCode);
-assert.strictEqual(finalMC03Parts.length, 3, 'MC03 remains strictly 3 parts');
-assert.deepStrictEqual(finalMC03Parts.sort(), ['5012394', '5036677', 'F53200000A'].sort());
+assert.strictEqual(finalMC03Parts.length, 0, 'MC03 remains strictly 0 parts');
 
 const finalMC04Parts = protectedMappings.filter(m => m.machineCode === 'MC04').map(m => m.partCode);
 assert(finalMC04Parts.includes('CORRECT-PART-MC04'), 'MC04 got its correct part');
 
-console.log('  ✓ Machine 3 data is same exact to previous ones, completely immune to mistakes');
+console.log('  ✓ Machine 3 parts are completely deleted and blocked from mistaken additions');
 console.log('\n🎉 ALL VERIFICATION TESTS PASSED SUCCESSFULLY!');

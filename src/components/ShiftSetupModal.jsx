@@ -20,7 +20,7 @@ import {
   getMachinePartMappings,
   normalizeMachineCode
 } from '../services/storageService';
-import { INITIAL_OPERATORS, INITIAL_PARTS, INITIAL_MACHINE_PART_MAPPINGS } from '../data/seedData';
+import { INITIAL_OPERATORS, INITIAL_MACHINE_PART_MAPPINGS } from '../data/seedData';
 
 export default function ShiftSetupModal({
   isOpen,
@@ -85,22 +85,16 @@ export default function ShiftSetupModal({
   });
   const [startCounter, setStartCounter] = useState('154200');
 
-  // Master Parts List (Guaranteed baseline 3 parts + any uploaded parts)
+  // Master Parts List (Guaranteed uploaded parts without deleted MC03 parts)
   const effectivePartsList = useMemo(() => {
     if (partsList && partsList.length > 0) {
-      // Merge with initial parts to ensure initial 3 are never missing
-      const pMap = new Map();
-      INITIAL_PARTS.forEach(p => {
+      const DELETED_MC03_PARTS = new Set(['F53200000A', '5036677', '5012394']);
+      return partsList.filter(p => {
         const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
-        if (code) pMap.set(code, p);
+        return !DELETED_MC03_PARTS.has(code);
       });
-      partsList.forEach(p => {
-        const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
-        if (code) pMap.set(code, p);
-      });
-      return Array.from(pMap.values());
     }
-    return INITIAL_PARTS;
+    return [];
   }, [partsList]);
 
   // Active Machine-Part Mappings (from props or storage or seed)
@@ -115,7 +109,7 @@ export default function ShiftSetupModal({
 
   // Filter parts strictly for the selected machine based on sheet mappings
   const machineLinkedParts = useMemo(() => {
-    const selMc = normalizeMachineCode(selectedMachineNumber || 'MC03');
+    const selMc = normalizeMachineCode(selectedMachineNumber || 'MC04');
     const linkedCodes = new Set();
 
     effectiveMappings.forEach(m => {
@@ -126,16 +120,14 @@ export default function ShiftSetupModal({
       }
     });
 
-    if (linkedCodes.size > 0) {
-      const filtered = effectivePartsList.filter(p => {
+    if (effectiveMappings && effectiveMappings.length > 0) {
+      return effectivePartsList.filter(p => {
         const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
         return linkedCodes.has(code);
       });
-      if (filtered.length > 0) return filtered;
     }
 
-    // Graceful fallback if no explicit mappings yet configured for this machine
-    return effectivePartsList;
+    return [];
   }, [selectedMachineNumber, effectiveMappings, effectivePartsList]);
 
   const [partId, setPartId] = useState('');
@@ -147,6 +139,8 @@ export default function ShiftSetupModal({
       if (!exists) {
         setPartId(machineLinkedParts[0].id || machineLinkedParts[0].partNumber);
       }
+    } else {
+      setPartId('');
     }
   }, [selectedMachineNumber, machineLinkedParts]);
 
@@ -498,13 +492,35 @@ export default function ShiftSetupModal({
                 value={effectivePartId}
                 onChange={(e) => setPartId(e.target.value)}
               >
-                {machineLinkedParts.map(p => (
-                  <option key={p.id || p.partNumber} value={p.id || p.partNumber}>
-                    {p.partNumber || p.partCode} — {p.partName} ({p.customer || 'Standard'})
+                {machineLinkedParts.length === 0 ? (
+                  <option value="" disabled>
+                    No parts mapped to {selectedMachineNumber}
                   </option>
-                ))}
+                ) : (
+                  machineLinkedParts.map(p => (
+                    <option key={p.id || p.partNumber} value={p.id || p.partNumber}>
+                      {p.partNumber || p.partCode} — {p.partName} ({p.customer || 'Standard'})
+                    </option>
+                  ))
+                )}
               </select>
             </div>
+
+            {machineLinkedParts.length === 0 && (
+              <div
+                style={{
+                  padding: '10px 12px',
+                  background: 'var(--bg-surface2)',
+                  borderRadius: '8px',
+                  border: '1px solid var(--clr-border)',
+                  color: 'var(--clr-text2)',
+                  fontSize: '0.8rem',
+                  lineHeight: 1.4
+                }}
+              >
+                ⚠️ <strong>No parts mapped to {selectedMachineNumber}.</strong> Parts for this machine were deleted or not yet assigned. Please configure parts for this machine in Part Master to start a shift.
+              </div>
+            )}
 
             {/* Technical Specifications Card with Dual Cycle Time & Target */}
             {selectedPart && (

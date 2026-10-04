@@ -63,53 +63,7 @@ export const INITIAL_MACHINES = [
 
 export const INITIAL_MOULDS = [];
 
-export const INITIAL_PARTS = [
-  {
-    id: 'part-01',
-    partNumber: 'F53200000A',
-    partCode: 'F53200000A',
-    partName: 'Front Bezel Enclosure',
-    customer: 'Schneider Electric',
-    standardCycleTimeSeconds: 20.0,
-    actualCycleTimeSeconds: 20.0,
-    cycleTime: 20.0,
-    cavityCount: 2,
-    rawMaterialGrade: 'PP Copolymer 575P',
-    partWeightGrams: 42.5,
-    runnerWeightGrams: 5.2,
-    status: 'active'
-  },
-  {
-    id: 'part-02',
-    partNumber: '5036677',
-    partCode: '5036677',
-    partName: 'Terminal Cover Plate',
-    customer: 'Bosch Automotive',
-    standardCycleTimeSeconds: 15.0,
-    actualCycleTimeSeconds: 15.0,
-    cycleTime: 15.0,
-    cavityCount: 4,
-    rawMaterialGrade: 'Nylon 6 30% GF',
-    partWeightGrams: 28.0,
-    runnerWeightGrams: 4.0,
-    status: 'active'
-  },
-  {
-    id: 'part-03',
-    partNumber: '5012394',
-    partCode: '5012394',
-    partName: 'Switch Housing Bracket',
-    customer: 'Tata Motors',
-    standardCycleTimeSeconds: 25.0,
-    actualCycleTimeSeconds: 25.0,
-    cycleTime: 25.0,
-    cavityCount: 2,
-    rawMaterialGrade: 'ABS Hi-Impact AF312',
-    partWeightGrams: 35.0,
-    runnerWeightGrams: 4.5,
-    status: 'active'
-  }
-];
+export const INITIAL_PARTS = [];
 
 
 export const INITIAL_MATERIALS = [
@@ -183,13 +137,7 @@ export const INITIAL_MATERIALS = [
 
 export const INITIAL_WORK_ORDERS = [];
 
-// Machine-Part Mapping (MC03 -> Part Codes)
-// Future-ready structure: Machine Code | Mould Number | Part Code | Approved to Run
-export const INITIAL_MACHINE_PART_MAPPINGS = [
-  { id: 'map-01', machineCode: 'MC03', machineNumber: 'MC03', partCode: 'F53200000A', partNumber: 'F53200000A', isApproved: true, status: 'active' },
-  { id: 'map-02', machineCode: 'MC03', machineNumber: 'MC03', partCode: '5036677', partNumber: '5036677', isApproved: true, status: 'active' },
-  { id: 'map-03', machineCode: 'MC03', machineNumber: 'MC03', partCode: '5012394', partNumber: '5012394', isApproved: true, status: 'active' }
-];
+export const INITIAL_MACHINE_PART_MAPPINGS = [];
 
 // Supervisor Master for Pilot
 export const SUPERVISORS = [
