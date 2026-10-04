@@ -20,6 +20,14 @@ import {
 
 const WEBHOOK_STORAGE_KEY = 'rp_mastersheet_webhook_url_v1';
 
+export const SESSION_CLIENT_ID = typeof window !== 'undefined' && window.sessionStorage
+  ? (window.sessionStorage.getItem('rp_session_client_id') || (() => {
+      const id = 'client_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now();
+      try { window.sessionStorage.setItem('rp_session_client_id', id); } catch (e) {}
+      return id;
+    })())
+  : 'client_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now();
+
 /**
  * Extracts comprehensive KPIs and metadata from a shift report object
  */
@@ -346,7 +354,12 @@ export function subscribeToShiftReports(onShiftUpdate, onMasterUpdate, onShiftDe
         (payload) => {
           const rowId = payload.new?.id || payload.old?.id;
           if (rowId === 'RP_PLANT_MASTER_DATA') {
-            console.log('📡 Realtime Cloud Master Data update received!');
+            const incomingOrigin = payload.new?.full_data?.originClientId;
+            if (incomingOrigin && incomingOrigin === SESSION_CLIENT_ID) {
+              // Discard own reflection to prevent feedback loops and UI flickering
+              return;
+            }
+            console.log('📡 Realtime Cloud Master Data update received from remote client!');
             if (typeof onMasterUpdate === 'function') {
               onMasterUpdate(payload.new?.full_data);
             }
@@ -456,6 +469,7 @@ export async function pushMasterDataToCloud(overrides = {}) {
       full_data: {
         type: 'RP_PLANT_MASTER_DATA',
         version: '1.0.0',
+        originClientId: SESSION_CLIENT_ID,
         updatedAt: new Date().toISOString(),
         parts,
         machines,
@@ -515,21 +529,21 @@ export async function fetchMasterDataFromCloud() {
     const rejectionCodes = Array.isArray(payload.rejectionCodes) ? payload.rejectionCodes : [];
     const downtimeCodes = Array.isArray(payload.downtimeCodes) ? payload.downtimeCodes : [];
 
-    // If cloud has valid parts, save them to local storage
+    // If cloud has valid parts, save them to local storage silently (syncToCloud = false)
     if (parts.length > 0) {
-      saveParts(parts);
+      saveParts(parts, false);
     }
     if (machines.length > 0) {
-      saveMachines(machines);
+      saveMachines(machines, false);
     }
     if (mappings.length > 0) {
-      saveMachinePartMappings(mappings);
+      saveMachinePartMappings(mappings, false);
     }
     if (rejectionCodes.length > 0) {
-      saveRejectionCodes(rejectionCodes);
+      saveRejectionCodes(rejectionCodes, false);
     }
     if (downtimeCodes.length > 0) {
-      saveDowntimeCodes(downtimeCodes);
+      saveDowntimeCodes(downtimeCodes, false);
     }
 
     console.log(`☁️ Cloud Sync: Downloaded ${parts.length} parts and ${machines.length} machines from Supabase!`);

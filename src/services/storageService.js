@@ -874,8 +874,15 @@ export function getMachines() {
   // Return in fleet order: MC03, MC04, MC05, MC06 (strictly 4 machines)
   return ['MC03', 'MC04', 'MC05', 'MC06'].map(code => mcMap.get(code)).filter(Boolean);
 }
-export function syncMasterDataToCloudBackground() {
-  if (typeof window !== 'undefined') {
+let backgroundSyncTimer = null;
+
+export function syncMasterDataToCloudBackground(debounceMs = 1200) {
+  if (typeof window === 'undefined') return;
+  if (backgroundSyncTimer) {
+    clearTimeout(backgroundSyncTimer);
+  }
+  backgroundSyncTimer = setTimeout(() => {
+    backgroundSyncTimer = null;
     import('./cloudSyncService.js').then(mod => {
       if (mod && typeof mod.pushMasterDataToCloud === 'function') {
         mod.pushMasterDataToCloud().catch(err => {
@@ -883,10 +890,10 @@ export function syncMasterDataToCloudBackground() {
         });
       }
     }).catch(() => {});
-  }
+  }, debounceMs);
 }
 
-export function saveMachines(machines) {
+export function saveMachines(machines, syncToCloud = true) {
   if (typeof localStorage !== 'undefined') {
     const standardFleet = [
       { id: 'm-mc-03', machineNumber: 'MC03', machineCode: 'MC03', machineName: 'Milacron 450T', make: 'Milacron', model: '450T', capacityTon: 450, tonnage: 450, status: 'active' },
@@ -916,7 +923,7 @@ export function saveMachines(machines) {
     const fleetList = ['MC03', 'MC04', 'MC05', 'MC06'].map(code => mcMap.get(code));
     localStorage.setItem(KEYS.MACHINES, JSON.stringify(fleetList));
   }
-  syncMasterDataToCloudBackground();
+  if (syncToCloud) syncMasterDataToCloudBackground();
 }
 
 export function getMoulds() {
@@ -924,11 +931,11 @@ export function getMoulds() {
   const data = localStorage.getItem(KEYS.MOULDS);
   return data ? JSON.parse(data) : [];
 }
-export function saveMoulds(moulds) {
+export function saveMoulds(moulds, syncToCloud = true) {
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem(KEYS.MOULDS, JSON.stringify(moulds));
   }
-  syncMasterDataToCloudBackground();
+  if (syncToCloud) syncMasterDataToCloudBackground();
 }
 
 export function getParts() {
@@ -954,7 +961,7 @@ export function getParts() {
 
   return Array.from(partsMap.values());
 }
-export function saveParts(parts) {
+export function saveParts(parts, syncToCloud = true) {
   if (typeof localStorage !== 'undefined') {
     const partsMap = new Map();
 
@@ -965,39 +972,39 @@ export function saveParts(parts) {
     });
     localStorage.setItem(KEYS.PARTS, JSON.stringify(Array.from(partsMap.values())));
   }
-  syncMasterDataToCloudBackground();
+  if (syncToCloud) syncMasterDataToCloudBackground();
 }
 
 export function getRejectionCodes() {
   if (typeof localStorage === 'undefined') return [];
   return JSON.parse(localStorage.getItem(KEYS.REJECTION_CODES) || '[]');
 }
-export function saveRejectionCodes(codes) {
+export function saveRejectionCodes(codes, syncToCloud = true) {
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem(KEYS.REJECTION_CODES, JSON.stringify(codes));
   }
-  syncMasterDataToCloudBackground();
+  if (syncToCloud) syncMasterDataToCloudBackground();
 }
 
 export function getDowntimeCodes() {
   if (typeof localStorage === 'undefined') return [];
   return JSON.parse(localStorage.getItem(KEYS.DOWNTIME_CODES) || '[]');
 }
-export function saveDowntimeCodes(codes) {
+export function saveDowntimeCodes(codes, syncToCloud = true) {
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem(KEYS.DOWNTIME_CODES, JSON.stringify(codes));
   }
-  syncMasterDataToCloudBackground();
+  if (syncToCloud) syncMasterDataToCloudBackground();
 }
 
-export function clearAllRejectionCodes() {
+export function clearAllRejectionCodes(syncToCloud = true) {
   localStorage.setItem(KEYS.REJECTION_CODES, JSON.stringify([]));
-  syncMasterDataToCloudBackground();
+  if (syncToCloud) syncMasterDataToCloudBackground();
 }
 
-export function clearAllDowntimeCodes() {
+export function clearAllDowntimeCodes(syncToCloud = true) {
   localStorage.setItem(KEYS.DOWNTIME_CODES, JSON.stringify([]));
-  syncMasterDataToCloudBackground();
+  if (syncToCloud) syncMasterDataToCloudBackground();
 }
 
 /**
@@ -1200,7 +1207,7 @@ export function getMachinePartMappings() {
   return Array.from(map.values());
 }
 
-export function saveMachinePartMappings(mappings) {
+export function saveMachinePartMappings(mappings, syncToCloud = true) {
   if (typeof localStorage !== 'undefined') {
     const FLEET_CODES = ['MC03', 'MC04', 'MC05', 'MC06'];
     const map = new Map();
@@ -1236,13 +1243,13 @@ export function saveMachinePartMappings(mappings) {
 
     localStorage.setItem(KEYS.MACHINE_PART_MAPPINGS, JSON.stringify(Array.from(map.values())));
   }
-  syncMasterDataToCloudBackground();
+  if (syncToCloud) syncMasterDataToCloudBackground();
 }
 
 /**
  * Toggles mapping of a part to a specific machine.
  */
-export function togglePartMachineMapping(machineCode, partCode) {
+export function togglePartMachineMapping(machineCode, partCode, syncToCloud = true) {
   const normMc = normalizeMachineCode(machineCode);
   const pCode = (partCode || '').trim().toUpperCase();
   if (!normMc || !pCode) return false;
@@ -1272,13 +1279,13 @@ export function togglePartMachineMapping(machineCode, partCode) {
       isApproved: true,
       status: 'active'
     };
-    saveMachinePartMappings([newMapping]);
+    saveMachinePartMappings([newMapping], false);
   }
-  syncMasterDataToCloudBackground();
+  if (syncToCloud) syncMasterDataToCloudBackground();
   return true;
 }
 
-export function saveUnifiedMasterData({ parts = [], machines = [], mappings = [] }) {
+export function saveUnifiedMasterData({ parts = [], machines = [], mappings = [] }, syncToCloud = true) {
   if (typeof localStorage !== 'undefined') {
     let effectiveMappings = [...(mappings || [])];
 
@@ -1337,14 +1344,14 @@ export function saveUnifiedMasterData({ parts = [], machines = [], mappings = []
     }
 
     if (machines.length > 0) {
-      saveMachines(machines);
+      saveMachines(machines, false);
     }
 
     if (effectiveMappings.length > 0) {
-      saveMachinePartMappings(effectiveMappings);
+      saveMachinePartMappings(effectiveMappings, false);
     }
   }
-  syncMasterDataToCloudBackground();
+  if (syncToCloud) syncMasterDataToCloudBackground();
 }
 
 export function getApprovedPartsForMachine(machineCode) {

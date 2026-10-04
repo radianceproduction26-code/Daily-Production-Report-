@@ -30,7 +30,8 @@ import {
   subscribeToShiftReports,
   deleteShiftReportFromCloud,
   pushMasterDataToCloud,
-  fetchMasterDataFromCloud
+  fetchMasterDataFromCloud,
+  SESSION_CLIENT_ID
 } from './services/cloudSyncService';
 import { I18nProvider } from './i18n/I18nContext';
 
@@ -178,28 +179,30 @@ export default function App() {
       },
       (incomingMasterData) => {
         try {
+          if (!incomingMasterData) return;
+          if (incomingMasterData.originClientId && incomingMasterData.originClientId === SESSION_CLIENT_ID) {
+            return;
+          }
           console.log('Realtime master data sync received across devices:', incomingMasterData);
-          if (incomingMasterData) {
-            if (incomingMasterData.parts?.length > 0) {
-              saveParts(incomingMasterData.parts);
-              setParts(incomingMasterData.parts);
-            }
-            if (incomingMasterData.machines?.length > 0) {
-              saveMachines(incomingMasterData.machines);
-              setMachines(incomingMasterData.machines);
-            }
-            if (incomingMasterData.mappings?.length > 0) {
-              saveMachinePartMappings(incomingMasterData.mappings);
-              setMappings(incomingMasterData.mappings);
-            }
-            if (incomingMasterData.rejectionCodes?.length > 0) {
-              saveRejectionCodes(incomingMasterData.rejectionCodes);
-              setRejectionCodes(incomingMasterData.rejectionCodes);
-            }
-            if (incomingMasterData.downtimeCodes?.length > 0) {
-              saveDowntimeCodes(incomingMasterData.downtimeCodes);
-              setDowntimeCodes(incomingMasterData.downtimeCodes);
-            }
+          if (incomingMasterData.parts?.length > 0) {
+            saveParts(incomingMasterData.parts, false);
+            setParts(incomingMasterData.parts);
+          }
+          if (incomingMasterData.machines?.length > 0) {
+            saveMachines(incomingMasterData.machines, false);
+            setMachines(incomingMasterData.machines);
+          }
+          if (incomingMasterData.mappings?.length > 0) {
+            saveMachinePartMappings(incomingMasterData.mappings, false);
+            setMappings(incomingMasterData.mappings);
+          }
+          if (incomingMasterData.rejectionCodes?.length > 0) {
+            saveRejectionCodes(incomingMasterData.rejectionCodes, false);
+            setRejectionCodes(incomingMasterData.rejectionCodes);
+          }
+          if (incomingMasterData.downtimeCodes?.length > 0) {
+            saveDowntimeCodes(incomingMasterData.downtimeCodes, false);
+            setDowntimeCodes(incomingMasterData.downtimeCodes);
           }
         } catch (err) {
           console.warn('Realtime master data handling error:', err);

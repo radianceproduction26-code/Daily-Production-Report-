@@ -205,7 +205,7 @@ export default function PartMasterView({
         parts: result.parts,
         machines: result.machines,
         mappings: result.mappings
-      });
+      }, false);
 
       // Immediately push to Supabase Cloud so all mobile devices & tablets receive these parts
       const cloudRes = await pushMasterDataToCloud({
@@ -650,7 +650,7 @@ export default function PartMasterView({
 
                 return (
                   <div
-                    key={part.id}
+                    key={part.id || `p_${part.partNumber || part.partCode}`}
                     className="card"
                     style={{
                       padding: '14px',
