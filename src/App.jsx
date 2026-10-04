@@ -246,7 +246,15 @@ export default function App() {
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [pendingTab, setPendingTab] = useState(null);
 
+  // Tabs that require supervisor unlock
+  const PROTECTED_TABS = ['part-master', 'settings', 'admin', 'upload-center', 'audit', 'health', 'trial'];
+
   const handleTabChange = (targetTab) => {
+    if (PROTECTED_TABS.includes(targetTab) && !isSupervisorUnlocked) {
+      setPendingTab(targetTab);
+      setPasswordModalOpen(true);
+      return;
+    }
     setActiveTab(targetTab);
   };
 
@@ -289,8 +297,6 @@ export default function App() {
     if (res.success) {
       const freshReports = getShiftReports();
       setReports(freshReports);
-      const freshActive = getActiveReport();
-      setActiveReport(freshActive);
       await deleteShiftReportFromCloud(reportId);
     } else {
       alert('Could not delete report: ' + (res.error || 'Unknown error'));
