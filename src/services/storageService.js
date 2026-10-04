@@ -763,11 +763,15 @@ export function getMachines() {
 
   // Normalize & deduplicate using a Map keyed by normalized machine code
   const mcMap = new Map();
+  // Machine 3 (MC03) is strictly locked to its exact previous standard definition
+  mcMap.set('MC03', { ...standardFleet[0] });
+
   list.forEach(m => {
     const rawCode = m.machineNumber || m.machineCode || '';
     const normalized = normalizeMachineCode(rawCode);
     // Only keep machines that belong to our fleet (MC03..MC06)
     if (!FLEET_CODES.has(normalized)) return;
+    if (normalized === 'MC03') return; // MC03 strictly restored to exact previous specifications
     const stdMatch = standardFleet.find(sf => sf.machineNumber === normalized);
     if (!mcMap.has(normalized)) {
       mcMap.set(normalized, {
@@ -822,6 +826,7 @@ export function saveMachines(machines) {
 
     (machines || []).forEach(m => {
       const norm = normalizeMachineCode(m.machineNumber || m.machineCode || '');
+      if (norm === 'MC03') return; // MC03 strictly locked to exact previous standard definition
       if (mcMap.has(norm)) {
         const std = mcMap.get(norm);
         mcMap.set(norm, {
@@ -854,21 +859,66 @@ export function saveMoulds(moulds) {
 }
 
 export function getParts() {
-  if (typeof localStorage === 'undefined') return [];
-  const data = localStorage.getItem(KEYS.PARTS);
-  return data ? JSON.parse(data) : [];
+  const partsMap = new Map();
+  // 1. Strictly restore exact previous MC03 parts from INITIAL_PARTS
+  INITIAL_PARTS.forEach(p => {
+    const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
+    if (code) partsMap.set(code, { ...p });
+  });
+
+  if (typeof localStorage !== 'undefined') {
+    const data = localStorage.getItem(KEYS.PARTS);
+    if (data) {
+      try {
+        const stored = JSON.parse(data);
+        if (Array.isArray(stored)) {
+          const mc03PartCodes = new Set(['F53200000A', '5036677', '5012394']);
+          stored.forEach(p => {
+            const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
+            if (!code) return;
+            if (mc03PartCodes.has(code)) {
+              const base = INITIAL_PARTS.find(bp => bp.partNumber === code || bp.partCode === code);
+              partsMap.set(code, {
+                ...base,
+                actualCycleTimeSeconds: p.actualCycleTimeSeconds || base.actualCycleTimeSeconds
+              });
+            } else {
+              // Parts for other machines (MC04, MC05, MC06) preserved as is
+              partsMap.set(code, p);
+            }
+          });
+        }
+      } catch (e) {
+        console.warn('Error reading stored parts:', e);
+      }
+    }
+  }
+
+  return Array.from(partsMap.values());
 }
 export function saveParts(parts) {
   if (typeof localStorage !== 'undefined') {
     const partsMap = new Map();
-    // Guarantee base 3 parts always exist
+    const mc03PartCodes = new Set(['F53200000A', '5036677', '5012394']);
+
+    // 1. Strictly guarantee base 3 parts for MC03 are restored exact
     INITIAL_PARTS.forEach(p => {
       const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
-      if (code) partsMap.set(code, p);
+      if (code) partsMap.set(code, { ...p });
     });
+
     (parts || []).forEach(p => {
       const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
-      if (code) partsMap.set(code, p);
+      if (!code) return;
+      if (mc03PartCodes.has(code)) {
+        const base = INITIAL_PARTS.find(bp => bp.partNumber === code || bp.partCode === code);
+        partsMap.set(code, {
+          ...base,
+          actualCycleTimeSeconds: p.actualCycleTimeSeconds || base.actualCycleTimeSeconds
+        });
+      } else {
+        partsMap.set(code, p);
+      }
     });
     localStorage.setItem(KEYS.PARTS, JSON.stringify(Array.from(partsMap.values())));
   }
@@ -1068,12 +1118,12 @@ export function saveMaterials(materials) {
 
 // Machine-Part Mappings (strictly MC03 to MC06 -> Part Codes)
 export function getMachinePartMappings() {
-  const FLEET_CODES = ['MC03', 'MC04', 'MC05', 'MC06'];
+  const FLEET_CODES = ['MC04', 'MC05', 'MC06'];
   const BASE_MC03_PARTS = ['F53200000A', '5036677', '5012394'];
 
   const map = new Map();
 
-  // 1. Machine 3 (MC03) MUST always retain its previously mapped baseline parts
+  // 1. Machine 3 (MC03) MUST STRICTLY have ONLY its exact previous 3 mapped parts
   BASE_MC03_PARTS.forEach(pCode => {
     map.set(`MC03__${pCode}`, {
       id: `map-mc03-${pCode.toLowerCase()}`,
@@ -1088,7 +1138,7 @@ export function getMachinePartMappings() {
     });
   });
 
-  // 2. Load stored mappings and normalize machine codes (e.g. 4 -> MC04, 5 -> MC05, 6 -> MC06)
+  // 2. Load stored mappings for MC04, MC05, MC06 (strictly ignore any extra MC03 entries in stored)
   if (typeof localStorage !== 'undefined') {
     const data = localStorage.getItem(KEYS.MACHINE_PART_MAPPINGS);
     if (data) {
@@ -1098,6 +1148,9 @@ export function getMachinePartMappings() {
           stored.forEach(m => {
             const rawMc = m.machineCode || m.machineNumber || '';
             const normMc = normalizeMachineCode(rawMc);
+            // Strictly exclude any extra/mistaken mappings for MC03 - MC03 is strictly the original 3 parts!
+            if (normMc === 'MC03') return;
+
             const pCode = (m.partCode || m.partNumber || '').trim().toUpperCase();
             if (!FLEET_CODES.includes(normMc) || !pCode) return;
 
@@ -1126,12 +1179,12 @@ export function getMachinePartMappings() {
 
 export function saveMachinePartMappings(mappings) {
   if (typeof localStorage !== 'undefined') {
-    const FLEET_CODES = ['MC03', 'MC04', 'MC05', 'MC06'];
+    const FLEET_CODES = ['MC04', 'MC05', 'MC06'];
     const BASE_MC03_PARTS = ['F53200000A', '5036677', '5012394'];
 
     const map = new Map();
 
-    // 1. Keep previous mapped parts for MC03 intact
+    // 1. Strictly restore exact previous 3 mapped parts for MC03
     BASE_MC03_PARTS.forEach(pCode => {
       map.set(`MC03__${pCode}`, {
         id: `map-mc03-${pCode.toLowerCase()}`,
@@ -1146,10 +1199,12 @@ export function saveMachinePartMappings(mappings) {
       });
     });
 
-    // 2. Add / update mappings with normalized machine codes (MC03 to MC06)
+    // 2. Add / update mappings for MC04, MC05, MC06 (skip any MC03 in incoming mappings)
     (mappings || []).forEach(m => {
       const rawMc = m.machineCode || m.machineNumber || '';
       const normMc = normalizeMachineCode(rawMc);
+      if (normMc === 'MC03') return; // MC03 strictly locked to exact previous 3 parts
+
       const pCode = (m.partCode || m.partNumber || '').trim().toUpperCase();
       if (!FLEET_CODES.includes(normMc) || !pCode) return;
 

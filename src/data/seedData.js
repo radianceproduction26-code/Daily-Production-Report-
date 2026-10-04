@@ -183,24 +183,12 @@ export const INITIAL_MATERIALS = [
 
 export const INITIAL_WORK_ORDERS = [];
 
-// Machine-Part Mapping (MC03, MC04, MC05, MC06 -> Part Codes)
+// Machine-Part Mapping (MC03 -> Part Codes)
 // Future-ready structure: Machine Code | Mould Number | Part Code | Approved to Run
 export const INITIAL_MACHINE_PART_MAPPINGS = [
   { id: 'map-01', machineCode: 'MC03', machineNumber: 'MC03', partCode: 'F53200000A', partNumber: 'F53200000A', isApproved: true, status: 'active' },
   { id: 'map-02', machineCode: 'MC03', machineNumber: 'MC03', partCode: '5036677', partNumber: '5036677', isApproved: true, status: 'active' },
-  { id: 'map-03', machineCode: 'MC03', machineNumber: 'MC03', partCode: '5012394', partNumber: '5012394', isApproved: true, status: 'active' },
-
-  { id: 'map-04', machineCode: 'MC04', machineNumber: 'MC04', partCode: 'F53200000A', partNumber: 'F53200000A', isApproved: true, status: 'active' },
-  { id: 'map-05', machineCode: 'MC04', machineNumber: 'MC04', partCode: '5036677', partNumber: '5036677', isApproved: true, status: 'active' },
-  { id: 'map-06', machineCode: 'MC04', machineNumber: 'MC04', partCode: '5012394', partNumber: '5012394', isApproved: true, status: 'active' },
-
-  { id: 'map-07', machineCode: 'MC05', machineNumber: 'MC05', partCode: 'F53200000A', partNumber: 'F53200000A', isApproved: true, status: 'active' },
-  { id: 'map-08', machineCode: 'MC05', machineNumber: 'MC05', partCode: '5036677', partNumber: '5036677', isApproved: true, status: 'active' },
-  { id: 'map-09', machineCode: 'MC05', machineNumber: 'MC05', partCode: '5012394', partNumber: '5012394', isApproved: true, status: 'active' },
-
-  { id: 'map-10', machineCode: 'MC06', machineNumber: 'MC06', partCode: 'F53200000A', partNumber: 'F53200000A', isApproved: true, status: 'active' },
-  { id: 'map-11', machineCode: 'MC06', machineNumber: 'MC06', partCode: '5036677', partNumber: '5036677', isApproved: true, status: 'active' },
-  { id: 'map-12', machineCode: 'MC06', machineNumber: 'MC06', partCode: '5012394', partNumber: '5012394', isApproved: true, status: 'active' }
+  { id: 'map-03', machineCode: 'MC03', machineNumber: 'MC03', partCode: '5012394', partNumber: '5012394', isApproved: true, status: 'active' }
 ];
 
 // Supervisor Master for Pilot

@@ -162,9 +162,26 @@ const mc03After = afterUploadMappings.filter(m => m.machineCode === 'MC03').map(
 assert(mc03After.includes('F53200000A'), 'MC03 still has F53200000A');
 assert(mc03After.includes('5036677'), 'MC03 still has 5036677');
 assert(mc03After.includes('5012394'), 'MC03 still has 5012394');
+assert.strictEqual(mc03After.length, 3, 'MC03 strictly has only its 3 baseline parts');
 
 const mc04After = afterUploadMappings.filter(m => m.machineCode === 'MC04').map(m => m.partCode);
 assert(mc04After.includes('PART-A4'), 'MC04 has PART-A4');
 
-console.log('  ✓ saveUnifiedMasterData retained MC03 base parts while cleanly adding MC04, MC05, MC06 new parts');
+// 6. Test that any mistaken extra mappings for MC03 are discarded
+console.log('Test 6: Mistaken extra parts for MC03 are blocked, keeping MC03 exact');
+const pollutedMappings = [
+  { machineCode: 'MC03', partCode: 'WRONG-PART-ON-MC03', approvedToRun: true },
+  { machineCode: '3', partCode: 'ANOTHER-WRONG-MC03', approvedToRun: true },
+  { machineCode: 'MC04', partCode: 'CORRECT-PART-MC04', approvedToRun: true }
+];
+saveMachinePartMappings(pollutedMappings);
+const protectedMappings = getMachinePartMappings();
+const finalMC03Parts = protectedMappings.filter(m => m.machineCode === 'MC03').map(m => m.partCode);
+assert.strictEqual(finalMC03Parts.length, 3, 'MC03 remains strictly 3 parts');
+assert.deepStrictEqual(finalMC03Parts.sort(), ['5012394', '5036677', 'F53200000A'].sort());
+
+const finalMC04Parts = protectedMappings.filter(m => m.machineCode === 'MC04').map(m => m.partCode);
+assert(finalMC04Parts.includes('CORRECT-PART-MC04'), 'MC04 got its correct part');
+
+console.log('  ✓ Machine 3 data is same exact to previous ones, completely immune to mistakes');
 console.log('\n🎉 ALL VERIFICATION TESTS PASSED SUCCESSFULLY!');
