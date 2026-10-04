@@ -230,39 +230,49 @@ export function initializeStorage() {
     localStorage.setItem(REASONS_CLEARED_FLAG, 'true');
   }
 
-  // Master Data Initialization and MC03 Parts Purge:
+  // One-time reset of legacy MC03 baseline parts
+  const MC03_PURGED_FLAG = 'rp_mc03_legacy_purged_v1';
+  if (!localStorage.getItem(MC03_PURGED_FLAG)) {
+    try {
+      const rawParts = localStorage.getItem(KEYS.PARTS);
+      if (rawParts) {
+        const parsedParts = JSON.parse(rawParts);
+        if (Array.isArray(parsedParts)) {
+          const DELETED_MC03_PARTS = new Set(['F53200000A', '5036677', '5012394']);
+          const cleanedParts = parsedParts.filter(p => {
+            const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
+            return !DELETED_MC03_PARTS.has(code);
+          });
+          localStorage.setItem(KEYS.PARTS, JSON.stringify(cleanedParts));
+        }
+      }
+
+      const rawMaps = localStorage.getItem(KEYS.MACHINE_PART_MAPPINGS);
+      if (rawMaps) {
+        const parsedMaps = JSON.parse(rawMaps);
+        if (Array.isArray(parsedMaps)) {
+          const DELETED_MC03_PARTS = new Set(['F53200000A', '5036677', '5012394']);
+          const cleanedMaps = parsedMaps.filter(m => {
+            const mc = normalizeMachineCode(m.machineCode || m.machineNumber || '');
+            const pCode = (m.partCode || m.partNumber || '').trim().toUpperCase();
+            return mc !== 'MC03' && !DELETED_MC03_PARTS.has(pCode);
+          });
+          localStorage.setItem(KEYS.MACHINE_PART_MAPPINGS, JSON.stringify(cleanedMaps));
+        }
+      }
+    } catch (e) {}
+    localStorage.setItem(MC03_PURGED_FLAG, 'true');
+  }
+
+  // Ensure default parts/mappings keys exist if empty
+  if (!localStorage.getItem(KEYS.PARTS)) {
+    localStorage.setItem(KEYS.PARTS, JSON.stringify(INITIAL_PARTS));
+  }
+  if (!localStorage.getItem(KEYS.MACHINE_PART_MAPPINGS)) {
+    localStorage.setItem(KEYS.MACHINE_PART_MAPPINGS, JSON.stringify(INITIAL_MACHINE_PART_MAPPINGS));
+  }
+
   try {
-    const rawParts = localStorage.getItem(KEYS.PARTS);
-    if (!rawParts) {
-      localStorage.setItem(KEYS.PARTS, JSON.stringify(INITIAL_PARTS));
-    } else {
-      const parsedParts = JSON.parse(rawParts);
-      if (Array.isArray(parsedParts)) {
-        const DELETED_MC03_PARTS = new Set(['F53200000A', '5036677', '5012394']);
-        const cleanedParts = parsedParts.filter(p => {
-          const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
-          return !DELETED_MC03_PARTS.has(code);
-        });
-        localStorage.setItem(KEYS.PARTS, JSON.stringify(cleanedParts));
-      }
-    }
-
-    const rawMaps = localStorage.getItem(KEYS.MACHINE_PART_MAPPINGS);
-    if (!rawMaps) {
-      localStorage.setItem(KEYS.MACHINE_PART_MAPPINGS, JSON.stringify(INITIAL_MACHINE_PART_MAPPINGS));
-    } else {
-      const parsedMaps = JSON.parse(rawMaps);
-      if (Array.isArray(parsedMaps)) {
-        const DELETED_MC03_PARTS = new Set(['F53200000A', '5036677', '5012394']);
-        const cleanedMaps = parsedMaps.filter(m => {
-          const mc = normalizeMachineCode(m.machineCode || m.machineNumber || '');
-          const pCode = (m.partCode || m.partNumber || '').trim().toUpperCase();
-          return mc !== 'MC03' && !DELETED_MC03_PARTS.has(pCode);
-        });
-        localStorage.setItem(KEYS.MACHINE_PART_MAPPINGS, JSON.stringify(cleanedMaps));
-      }
-    }
-
     const existingMachines = JSON.parse(localStorage.getItem(KEYS.MACHINES) || '[]');
     if (!existingMachines || existingMachines.length === 0) {
       localStorage.setItem(KEYS.MACHINES, JSON.stringify(INITIAL_MACHINES));
@@ -772,12 +782,39 @@ export function normalizeMachineCode(raw) {
   if (/^MC[3-6]$/.test(s)) return `MC0${s.slice(-1)}`;
   // Plain digit 3..6 or 03..06
   if (/^0?[3-6]$/.test(s)) return `MC0${parseInt(s, 10)}`;
-  // Formats like 'MACHINE 4', 'MACHINE 04', 'M-MC-04', 'MC-04', 'MC 04', 'LINE 4'
-  const match = s.match(/(?:MC|MACHINE|LINE|M)?[-_\s]*0?([3-6])\b/i) || s.match(/([3-6])$/);
+
+  // Tonnage matching: 450T -> MC03, 350T -> MC04, 250T -> MC05, 180T -> MC06
+  if (/450\s*T?/i.test(s)) return 'MC03';
+  if (/350\s*T?/i.test(s)) return 'MC04';
+  if (/250\s*T?/i.test(s)) return 'MC05';
+  if (/180\s*T?/i.test(s)) return 'MC06';
+
+  // Formats like 'MACHINE 4', 'MACHINE 04', 'M-MC-04', 'MC-04', 'MC 04', 'LINE 4', 'M/C 4', 'PRESS 4'
+  const match = s.match(/(?:MC|M\/C|MACHINE|LINE|PRESS|M)?[-_\s#]*0?([3-6])\b/i) || s.match(/([3-6])$/);
   if (match && match[1]) {
     return `MC0${match[1]}`;
   }
   return s;
+}
+
+export function normalizeMachineCodes(raw) {
+  if (!raw) return [];
+  const str = String(raw).trim().toUpperCase();
+  if (str === 'ALL' || str === '*' || str === 'ALL MACHINES' || str === 'PLANT') {
+    return ['MC03', 'MC04', 'MC05', 'MC06'];
+  }
+  // Split on commas, slashes, ampersands, semicolons, plus signs
+  const parts = str.split(/[,/&;+]+/).map(p => p.trim()).filter(Boolean);
+  const codes = new Set();
+  parts.forEach(p => {
+    const code = normalizeMachineCode(p);
+    if (['MC03', 'MC04', 'MC05', 'MC06'].includes(code)) {
+      codes.add(code);
+    }
+  });
+  if (codes.size > 0) return Array.from(codes);
+  const single = normalizeMachineCode(raw);
+  return ['MC03', 'MC04', 'MC05', 'MC06'].includes(single) ? [single] : [];
 }
 
 export function getMachines() {
@@ -896,7 +933,6 @@ export function saveMoulds(moulds) {
 
 export function getParts() {
   const partsMap = new Map();
-  const DELETED_MC03_PARTS = new Set(['F53200000A', '5036677', '5012394']);
 
   if (typeof localStorage !== 'undefined') {
     const data = localStorage.getItem(KEYS.PARTS);
@@ -906,8 +942,7 @@ export function getParts() {
         if (Array.isArray(stored)) {
           stored.forEach(p => {
             const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
-            if (!code || DELETED_MC03_PARTS.has(code)) return;
-            // Parts for other machines (MC04, MC05, MC06) preserved as is
+            if (!code) return;
             partsMap.set(code, p);
           });
         }
@@ -922,11 +957,10 @@ export function getParts() {
 export function saveParts(parts) {
   if (typeof localStorage !== 'undefined') {
     const partsMap = new Map();
-    const DELETED_MC03_PARTS = new Set(['F53200000A', '5036677', '5012394']);
 
     (parts || []).forEach(p => {
       const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
-      if (!code || DELETED_MC03_PARTS.has(code)) return;
+      if (!code) return;
       partsMap.set(code, p);
     });
     localStorage.setItem(KEYS.PARTS, JSON.stringify(Array.from(partsMap.values())));
@@ -1125,15 +1159,11 @@ export function saveMaterials(materials) {
   localStorage.setItem(KEYS.MATERIALS, JSON.stringify(materials));
 }
 
-// Machine-Part Mappings (strictly MC04 to MC06 -> Part Codes; MC03 parts deleted)
+// Machine-Part Mappings (fleet MC03 to MC06 -> Part Codes)
 export function getMachinePartMappings() {
-  const FLEET_CODES = ['MC04', 'MC05', 'MC06'];
-  const DELETED_MC03_PARTS = new Set(['F53200000A', '5036677', '5012394']);
-
+  const FLEET_CODES = ['MC03', 'MC04', 'MC05', 'MC06'];
   const map = new Map();
 
-  // Machine 3 (MC03) has NO parts mapped (deleted as requested)
-  // Load stored mappings for MC04, MC05, MC06 only
   if (typeof localStorage !== 'undefined') {
     const data = localStorage.getItem(KEYS.MACHINE_PART_MAPPINGS);
     if (data) {
@@ -1143,11 +1173,8 @@ export function getMachinePartMappings() {
           stored.forEach(m => {
             const rawMc = m.machineCode || m.machineNumber || '';
             const normMc = normalizeMachineCode(rawMc);
-            // Strictly exclude MC03
-            if (normMc === 'MC03') return;
-
             const pCode = (m.partCode || m.partNumber || '').trim().toUpperCase();
-            if (!FLEET_CODES.includes(normMc) || !pCode || DELETED_MC03_PARTS.has(pCode)) return;
+            if (!FLEET_CODES.includes(normMc) || !pCode) return;
 
             const key = `${normMc}__${pCode}`;
             map.set(key, {
@@ -1157,6 +1184,7 @@ export function getMachinePartMappings() {
               machineNumber: normMc,
               partCode: pCode,
               partNumber: pCode,
+              mouldNumber: m.mouldNumber || `MLD-${pCode}`,
               approvedToRun: m.approvedToRun !== false && m.isApproved !== false,
               isApproved: m.approvedToRun !== false && m.isApproved !== false,
               status: m.status || 'active'
@@ -1174,20 +1202,22 @@ export function getMachinePartMappings() {
 
 export function saveMachinePartMappings(mappings) {
   if (typeof localStorage !== 'undefined') {
-    const FLEET_CODES = ['MC04', 'MC05', 'MC06'];
-    const DELETED_MC03_PARTS = new Set(['F53200000A', '5036677', '5012394']);
-
+    const FLEET_CODES = ['MC03', 'MC04', 'MC05', 'MC06'];
     const map = new Map();
 
-    // Machine 3 (MC03) has NO parts mapped (deleted as requested)
-    // Strictly add / update mappings for MC04, MC05, MC06
+    // 1. Keep all existing mappings so uploading parts for one machine does not wipe others
+    const existing = getMachinePartMappings();
+    existing.forEach(m => {
+      const key = `${m.machineCode}__${m.partCode}`;
+      map.set(key, m);
+    });
+
+    // 2. Add or update newly passed mappings
     (mappings || []).forEach(m => {
       const rawMc = m.machineCode || m.machineNumber || '';
       const normMc = normalizeMachineCode(rawMc);
-      if (normMc === 'MC03') return; // MC03 has 0 parts
-
       const pCode = (m.partCode || m.partNumber || '').trim().toUpperCase();
-      if (!FLEET_CODES.includes(normMc) || !pCode || DELETED_MC03_PARTS.has(pCode)) return;
+      if (!FLEET_CODES.includes(normMc) || !pCode) return;
 
       const key = `${normMc}__${pCode}`;
       map.set(key, {
@@ -1197,6 +1227,7 @@ export function saveMachinePartMappings(mappings) {
         machineNumber: normMc,
         partCode: pCode,
         partNumber: pCode,
+        mouldNumber: m.mouldNumber || `MLD-${pCode}`,
         approvedToRun: m.approvedToRun !== false && m.isApproved !== false,
         isApproved: m.approvedToRun !== false && m.isApproved !== false,
         status: m.status || 'active'
@@ -1208,35 +1239,109 @@ export function saveMachinePartMappings(mappings) {
   syncMasterDataToCloudBackground();
 }
 
+/**
+ * Toggles mapping of a part to a specific machine.
+ */
+export function togglePartMachineMapping(machineCode, partCode) {
+  const normMc = normalizeMachineCode(machineCode);
+  const pCode = (partCode || '').trim().toUpperCase();
+  if (!normMc || !pCode) return false;
+
+  const currentMappings = getMachinePartMappings();
+  const existingIdx = currentMappings.findIndex(
+    m => m.machineCode === normMc && m.partCode === pCode
+  );
+
+  let updatedMappings;
+  if (existingIdx >= 0) {
+    // Remove mapping
+    updatedMappings = currentMappings.filter((_, idx) => idx !== existingIdx);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(KEYS.MACHINE_PART_MAPPINGS, JSON.stringify(updatedMappings));
+    }
+  } else {
+    // Add mapping
+    const newMapping = {
+      id: `map-${normMc.toLowerCase()}-${pCode.toLowerCase()}`,
+      machineCode: normMc,
+      machineNumber: normMc,
+      partCode: pCode,
+      partNumber: pCode,
+      mouldNumber: `MLD-${pCode}`,
+      approvedToRun: true,
+      isApproved: true,
+      status: 'active'
+    };
+    saveMachinePartMappings([newMapping]);
+  }
+  syncMasterDataToCloudBackground();
+  return true;
+}
+
 export function saveUnifiedMasterData({ parts = [], machines = [], mappings = [] }) {
   if (typeof localStorage !== 'undefined') {
+    let effectiveMappings = [...(mappings || [])];
+
     if (parts.length > 0) {
-      const DELETED_MC03_PARTS = new Set(['F53200000A', '5036677', '5012394']);
       const currentParts = getParts();
       const partsMap = new Map();
 
       // Put existing parts from storage
       currentParts.forEach(p => {
         const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
-        if (code && !DELETED_MC03_PARTS.has(code)) partsMap.set(code, p);
+        if (code) partsMap.set(code, p);
       });
 
-      // Merge uploaded parts (excluding deleted MC03 parts)
+      // Merge uploaded parts
       parts.forEach(p => {
         const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
-        if (!code || DELETED_MC03_PARTS.has(code)) return;
+        if (!code) return;
         partsMap.set(code, p);
       });
 
       localStorage.setItem(KEYS.PARTS, JSON.stringify(Array.from(partsMap.values())));
+
+      // If no explicit mappings were provided in upload, auto-map uploaded parts:
+      if (!effectiveMappings || effectiveMappings.length === 0) {
+        parts.forEach(p => {
+          const pCode = (p.partNumber || p.partCode || '').trim().toUpperCase();
+          if (!pCode) return;
+          const targetMc = p.machineCode || p.machineNumber || p.machine;
+          if (targetMc) {
+            const mcCodes = normalizeMachineCodes(targetMc);
+            mcCodes.forEach(mc => {
+              effectiveMappings.push({
+                machineCode: mc,
+                partCode: pCode,
+                mouldNumber: `MLD-${pCode}`,
+                approvedToRun: true,
+                isApproved: true,
+                status: 'active'
+              });
+            });
+          } else {
+            // Default to all active machines so parts are immediately usable on floor
+            ['MC03', 'MC04', 'MC05', 'MC06'].forEach(mc => {
+              effectiveMappings.push({
+                machineCode: mc,
+                partCode: pCode,
+                mouldNumber: `MLD-${pCode}`,
+                approvedToRun: true,
+                isApproved: true,
+                status: 'active'
+              });
+            });
+          }
+        });
+      }
     }
 
     if (machines.length > 0) {
       saveMachines(machines);
     }
 
-    if (mappings.length > 0) {
-      saveMachinePartMappings(mappings);
+    if (effectiveMappings.length > 0) {
+      saveMachinePartMappings(effectiveMappings);
     }
   }
   syncMasterDataToCloudBackground();

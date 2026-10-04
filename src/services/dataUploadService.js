@@ -1,7 +1,5 @@
-// Radiance Polymers - Data Upload Center Service
-// Simple, non-ERP Excel parsing, template generation, and multi-sheet backup
 import XLSX from 'xlsx-js-style';
-import { normalizeMachineCode } from './storageService.js';
+import { normalizeMachineCode, normalizeMachineCodes } from './storageService.js';
 
 // Universal Excel Download Helper supporting Desktop Chrome, Android Chrome, and Android APK
 export async function downloadWorkbook(wb, filename) {
@@ -317,13 +315,6 @@ export function parseUnifiedPartMasterExcel(arrayBuffer) {
       return { success: false, error: 'Excel workbook contains no sheets.' };
     }
 
-    const firstSheetName = wb.SheetNames[0];
-    const rawRows = XLSX.utils.sheet_to_json(wb.Sheets[firstSheetName]);
-
-    if (!Array.isArray(rawRows) || rawRows.length === 0) {
-      return { success: false, error: 'Uploaded Part Master Excel file is empty.' };
-    }
-
     let rowsProcessed = 0;
     let rejected = 0;
     const errors = [];
@@ -331,106 +322,197 @@ export function parseUnifiedPartMasterExcel(arrayBuffer) {
     const machinesMap = new Map();
     const mappingsMap = new Map();
 
-    rawRows.forEach((r, idx) => {
-      const row = normalizeRowKeys(r);
-      const rowNum = idx + 2;
+    const stdFleetDefaults = {
+      'MC03': { name: 'Milacron 450T', tonnage: 450, make: 'Milacron', model: '450T' },
+      'MC04': { name: 'Milacron 350T', tonnage: 350, make: 'Milacron', model: '350T' },
+      'MC05': { name: 'Milacron 250T', tonnage: 250, make: 'Milacron', model: '250T' },
+      'MC06': { name: 'Milacron 180T', tonnage: 180, make: 'Milacron', model: '180T' },
+    };
 
-      const partNumber = (row['partnumber'] || row['partcode'] || row['part'] || '').toString().trim();
-      const partName = (row['partname'] || row['name'] || partNumber).toString().trim();
-      const customerName = (row['customername'] || row['customer'] || 'Internal').toString().trim();
-      const rawMachine = (row['machinenumber'] || row['machinecode'] || row['machine'] || '').toString().trim();
-      const machineNumber = normalizeMachineCode(rawMachine) || 'MC03';
-      const stdFleetDefaults = {
-        'MC03': { name: 'Milacron 450T', tonnage: 450, make: 'Milacron', model: '450T' },
-        'MC04': { name: 'Milacron 350T', tonnage: 350, make: 'Milacron', model: '350T' },
-        'MC05': { name: 'Milacron 250T', tonnage: 250, make: 'Milacron', model: '250T' },
-        'MC06': { name: 'Milacron 180T', tonnage: 180, make: 'Milacron', model: '180T' },
-      };
-      const def = stdFleetDefaults[machineNumber] || { name: `${machineNumber} Injection Press`, tonnage: 250, make: 'Milacron', model: '' };
-      const machineName = (row['machinename'] || def.name).toString().trim();
-      const machineMake = (row['machinemake'] || row['make'] || row['makemodel'] || def.make).toString().trim();
-      const machineTonnage = Number(row['machinetonnage'] || row['tonnage'] || row['capacitytons'] || row['capacity']) || def.tonnage;
-      const materialGrade = (row['materialgrade'] || row['rawmaterialgrade'] || row['material'] || 'Standard Grade').toString().trim();
-      const partWeight = Number(row['partweightg'] || row['partweight'] || row['weight']) || 0;
-      const runnerWeight = Number(row['runnerweightg'] || row['runnerweight']) || 0;
-      const cycleTime = Number(row['cycletimesec'] || row['cycletime'] || row['standardcycletimes'] || row['standardcycletime']) || 20.0;
-      const cavityCount = Number(row['cavitycount'] || row['cavities'] || row['cavity']) || 1;
-      const status = (row['status'] || 'active').toString().toLowerCase().trim();
-
-      if (!partNumber) {
-        rejected++;
-        errors.push(`Row ${rowNum}: Missing Part Number.`);
-        return;
-      }
-      if (!rawMachine) {
-        rejected++;
-        errors.push(`Row ${rowNum}: Missing Machine Number for Part ${partNumber}.`);
-        return;
-      }
-
-      // 1. Part definition
-      if (!partsMap.has(partNumber)) {
-        partsMap.set(partNumber, {
-          id: `part-${partNumber.toLowerCase()}`,
-          partCode: partNumber,
-          partNumber: partNumber,
-          partName: partName || partNumber,
-          customer: customerName,
-          rawMaterialGrade: materialGrade,
-          partWeightGrams: partWeight,
-          runnerWeightGrams: runnerWeight,
-          standardCycleTimeSeconds: cycleTime,
-          cavityCount: cavityCount > 0 ? cavityCount : 1,
-          status: status === 'inactive' ? 'inactive' : 'active'
-        });
-      } else {
-        const existing = partsMap.get(partNumber);
-        if (!existing.partName && partName) existing.partName = partName;
-        if (!existing.rawMaterialGrade && materialGrade) existing.rawMaterialGrade = materialGrade;
-      }
-
-      // 2. Machine definition (strictly standardized to fleet format MC03..MC06)
-      if (!machinesMap.has(machineNumber)) {
-        machinesMap.set(machineNumber, {
-          id: `m-${machineNumber.toLowerCase()}`,
-          machineNumber: machineNumber,
-          machineCode: machineNumber,
-          machineName: (machineName && !machineName.includes('Production IMM')) ? machineName : def.name,
-          makeModel: machineMake || `${def.make} ${def.model}`,
-          make: machineMake || def.make,
+    const registerMachine = (mc, mName, mMake, mTonnage) => {
+      if (!machinesMap.has(mc)) {
+        const def = stdFleetDefaults[mc] || { name: `${mc} Injection Press`, tonnage: 250, make: 'Milacron', model: '' };
+        machinesMap.set(mc, {
+          id: `m-${mc.toLowerCase()}`,
+          machineNumber: mc,
+          machineCode: mc,
+          machineName: (mName && !mName.includes('Production IMM')) ? mName : def.name,
+          makeModel: mMake || `${def.make} ${def.model}`,
+          make: mMake || def.make,
           model: def.model,
-          capacityTon: machineTonnage > 0 ? machineTonnage : def.tonnage,
-          tonnage: machineTonnage > 0 ? machineTonnage : def.tonnage,
+          capacityTon: mTonnage > 0 ? mTonnage : def.tonnage,
+          tonnage: mTonnage > 0 ? mTonnage : def.tonnage,
           hourlyCostRate: 1500,
           status: 'active'
         });
       }
+    };
+    // 1. Process all sheets in the workbook (handles single-sheet and multi-sheet workbooks)
+    wb.SheetNames.forEach(sheetName => {
+      const sheet = wb.Sheets[sheetName];
+      if (!sheet) return;
+      const rawRows = XLSX.utils.sheet_to_json(sheet);
+      if (!Array.isArray(rawRows) || rawRows.length === 0) return;
 
-      // 3. Machine-Part Mapping (strictly standardized to fleet machineCode)
-      const mapKey = `${machineNumber}_${partNumber}`;
-      if (!mappingsMap.has(mapKey)) {
-        mappingsMap.set(mapKey, {
-          id: `map-${machineNumber.toLowerCase()}-${partNumber.toLowerCase()}`,
-          machineCode: machineNumber,
-          machineNumber: machineNumber,
-          partCode: partNumber,
-          partNumber: partNumber,
-          mouldNumber: `MLD-${partNumber}`,
-          approvedToRun: status !== 'inactive',
-          isApproved: status !== 'inactive',
-          status: 'active'
+      rawRows.forEach((r, idx) => {
+        const row = normalizeRowKeys(r);
+
+        // Ultra-flexible Part Number detection
+        let partNumber = (
+          row['partnumber'] || row['partno'] || row['partcode'] || row['part'] ||
+          row['itemcode'] || row['itemno'] || row['itemnumber'] || row['fgcode'] ||
+          row['fgno'] || row['productcode'] || row['componentcode'] || row['componentno'] ||
+          row['toolno'] || row['mouldnumber'] || row['mouldno'] ||
+          ''
+        ).toString().trim();
+
+        if (!partNumber) {
+          // Fallback: check any key containing 'part', 'item', or 'fg'
+          for (const [k, v] of Object.entries(row)) {
+            if ((k.includes('part') || k.includes('item') || k.includes('fg')) &&
+                !k.includes('name') && !k.includes('desc') && !k.includes('weight') &&
+                !k.includes('time') && !k.includes('count') && !k.includes('cycle') && v) {
+              partNumber = String(v).trim();
+              if (partNumber) break;
+            }
+          }
+        }
+
+        // If this row has no part number, skip
+        if (!partNumber) return;
+
+        // Ultra-flexible Machine Number detection
+        let rawMachine = (
+          row['machinenumber'] || row['machineno'] || row['machinecode'] || row['machine'] ||
+          row['mcno'] || row['mc'] || row['mccode'] || row['line'] || row['lineno'] ||
+          row['linenumber'] || row['press'] || row['pressno'] || row['machinename'] ||
+          row['targetmachine'] || row['equipment'] || row['station'] ||
+          ''
+        ).toString().trim();
+
+        if (!rawMachine) {
+          // Fallback: check any key containing 'machine', 'mc', 'press', or 'line'
+          for (const [k, v] of Object.entries(row)) {
+            if ((k.includes('machine') || k.includes('mc') || k.includes('press') || k.includes('line')) &&
+                !k.includes('name') && !k.includes('make') && !k.includes('tonnage') && v) {
+              rawMachine = String(v).trim();
+              if (rawMachine) break;
+            }
+          }
+        }
+
+        const partName = (
+          row['partname'] || row['partdescription'] || row['description'] || row['desc'] ||
+          row['itemname'] || row['itemdescription'] || row['name'] || row['componentname'] ||
+          partNumber
+        ).toString().trim();
+
+        const customerName = (
+          row['customername'] || row['customer'] || row['client'] || row['oem'] || row['buyer'] || 'Internal'
+        ).toString().trim();
+
+        const materialGrade = (
+          row['materialgrade'] || row['rawmaterialgrade'] || row['material'] || row['resin'] || row['grade'] || 'Standard Grade'
+        ).toString().trim();
+
+        const partWeight = Number(row['partweightg'] || row['partweight'] || row['weight'] || row['shotweight']) || 0;
+        const runnerWeight = Number(row['runnerweightg'] || row['runnerweight'] || row['runner']) || 0;
+        const cycleTime = Number(row['cycletimesec'] || row['cycletime'] || row['standardcycletimes'] || row['standardcycletime'] || row['stdcycletime'] || row['ct'] || row['stdct'] || row['cycletimes'] || row['cycletimeseconds']) || 20.0;
+        const cavityCount = Number(row['cavitycount'] || row['cavities'] || row['cavity'] || row['noofcavities'] || row['noofcavity'] || row['cavityno']) || 1;
+        const status = (row['status'] || row['active'] || 'active').toString().toLowerCase().trim();
+
+        // 1. Register / Update Part
+        if (!partsMap.has(partNumber)) {
+          partsMap.set(partNumber, {
+            id: `part-${partNumber.toLowerCase()}`,
+            partCode: partNumber,
+            partNumber: partNumber,
+            partName: partName || partNumber,
+            customer: customerName,
+            rawMaterialGrade: materialGrade,
+            partWeightGrams: partWeight,
+            runnerWeightGrams: runnerWeight,
+            standardCycleTimeSeconds: cycleTime,
+            cavityCount: cavityCount > 0 ? cavityCount : 1,
+            machineNumber: rawMachine || 'ALL',
+            status: status === 'inactive' ? 'inactive' : 'active'
+          });
+        } else {
+          const existing = partsMap.get(partNumber);
+          if ((!existing.partName || existing.partName === partNumber) && partName) existing.partName = partName;
+          if (!existing.rawMaterialGrade && materialGrade) existing.rawMaterialGrade = materialGrade;
+          if (!existing.standardCycleTimeSeconds && cycleTime) existing.standardCycleTimeSeconds = cycleTime;
+          if (!existing.cavityCount && cavityCount) existing.cavityCount = cavityCount;
+          if (rawMachine) existing.machineNumber = rawMachine;
+        }
+
+        // 2. Resolve Target Machines for mapping
+        let targetMachineCodes = [];
+        if (rawMachine) {
+          targetMachineCodes = normalizeMachineCodes(rawMachine);
+        }
+
+        // If no machine specified in this row, auto-map to all 4 fleet machines so part is mapped and usable
+        if (targetMachineCodes.length === 0) {
+          targetMachineCodes = ['MC03', 'MC04', 'MC05', 'MC06'];
+        }
+
+        // 3. Register Machine and Machine-Part Mappings
+        targetMachineCodes.forEach(mc => {
+          registerMachine(mc);
+
+          const mapKey = `${mc}_${partNumber}`;
+          if (!mappingsMap.has(mapKey)) {
+            mappingsMap.set(mapKey, {
+              id: `map-${mc.toLowerCase()}-${partNumber.toLowerCase()}`,
+              machineCode: mc,
+              machineNumber: mc,
+              partCode: partNumber,
+              partNumber: partNumber,
+              mouldNumber: (row['mouldnumber'] || row['mould'] || `MLD-${partNumber}`).toString().trim(),
+              approvedToRun: status !== 'inactive',
+              isApproved: status !== 'inactive',
+              status: 'active'
+            });
+          }
         });
-      }
 
-      rowsProcessed++;
+        rowsProcessed++;
+      });
     });
+
+    if (partsMap.size === 0) {
+      return {
+        success: false,
+        error: 'No valid parts found in the uploaded Excel file. Please ensure your file has columns like "Part Number" or "Part Code".'
+      };
+    }
+
+    // Safety fallback: if mappingsMap is somehow empty, auto-map all parts across all fleet machines
+    if (mappingsMap.size === 0) {
+      partsMap.forEach(part => {
+        ['MC03', 'MC04', 'MC05', 'MC06'].forEach(mc => {
+          mappingsMap.set(`${mc}_${part.partNumber}`, {
+            id: `map-${mc.toLowerCase()}-${part.partNumber.toLowerCase()}`,
+            machineCode: mc,
+            machineNumber: mc,
+            partCode: part.partNumber,
+            partNumber: part.partNumber,
+            mouldNumber: `MLD-${part.partNumber}`,
+            approvedToRun: true,
+            isApproved: true,
+            status: 'active'
+          });
+        });
+      });
+    }
 
     const parts = Array.from(partsMap.values());
     const machines = Array.from(machinesMap.values());
     const mappings = Array.from(mappingsMap.values());
 
     return {
-      success: errors.length === 0 || rowsProcessed > 0,
+      success: true,
       rowsProcessed,
       partsCount: parts.length,
       machinesCount: machines.length,
@@ -444,7 +526,7 @@ export function parseUnifiedPartMasterExcel(arrayBuffer) {
   } catch (err) {
     return {
       success: false,
-      error: `Unified Part Master parsing failed: ${err.message}`
+      error: `Part Master parsing failed: ${err.message}`
     };
   }
 }

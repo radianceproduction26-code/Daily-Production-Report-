@@ -34,6 +34,9 @@ import {
 import {
   saveUnifiedMasterData,
   saveParts,
+  getParts,
+  getMachinePartMappings,
+  togglePartMachineMapping,
   getRejectionCodes,
   saveRejectionCodes,
   getDowntimeCodes,
@@ -226,6 +229,11 @@ export default function PartMasterView({
       setUploading(false);
       e.target.value = '';
     }
+  };
+
+  const handleToggleMapping = (machineCode, partCode) => {
+    togglePartMachineMapping(machineCode, partCode);
+    if (onRefreshData) onRefreshData();
   };
 
   // 2. Rejection Master Upload Handler
@@ -728,12 +736,40 @@ export default function PartMasterView({
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem', flexWrap: 'wrap', gap: '8px' }}>
                       <span style={{ color: 'var(--clr-text3)' }}>Grade: <strong>{part.rawMaterialGrade || 'PPCP'}</strong></span>
-                      <div style={{ display: 'flex', gap: '4px' }}>
-                        {mappedMachines.map(mc => (
-                          <span key={mc} className="badge badge-gray">{mc}</span>
-                        ))}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--clr-text3)' }}>Mapped Machines:</span>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          {['MC03', 'MC04', 'MC05', 'MC06'].map(mc => {
+                            const isMapped = mappedMachines.includes(mc);
+                            return (
+                              <button
+                                key={mc}
+                                type="button"
+                                onClick={() => handleToggleMapping(mc, part.partNumber || part.partCode)}
+                                title={isMapped ? `${part.partNumber || part.partCode} is mapped to ${mc}. Click to unmap.` : `Click to map ${part.partNumber || part.partCode} to ${mc}.`}
+                                style={{
+                                  border: isMapped ? '1px solid #0284c7' : '1px dashed var(--clr-border)',
+                                  background: isMapped ? '#0284c7' : 'var(--bg-surface2)',
+                                  color: isMapped ? '#ffffff' : 'var(--clr-text3)',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 800,
+                                  padding: '3px 8px',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '3px',
+                                  transition: 'all 0.15s ease'
+                                }}
+                              >
+                                <span>{mc}</span>
+                                <span style={{ fontSize: '0.75rem', opacity: isMapped ? 1 : 0.6 }}>{isMapped ? '✓' : '+'}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
                   </div>
