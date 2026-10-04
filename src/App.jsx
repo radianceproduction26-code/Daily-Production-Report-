@@ -61,7 +61,8 @@ import {
   createNewShiftReport,
   executeMouldChange,
   addDynamicRejectionCode,
-  addDynamicDowntimeCode
+  addDynamicDowntimeCode,
+  normalizeMachineCode
 } from './services/storageService';
 import { USERS, SHIFT_HOURS_DEFINITIONS } from './data/seedData';
 import { recordAuditLog } from './services/auditService';
@@ -100,8 +101,9 @@ export default function App() {
   // Dynamically resolve activeReport for the selected machine from the shift reports list
   // Once a report is submitted, it is no longer shown on the live Shifts console (only live running shifts are seen)
   const activeReport = React.useMemo(() => {
+    const sel = normalizeMachineCode(selectedMachineNumber || 'MC03');
     const liveReport = reports.find(
-      r => (r.machineNumber === selectedMachineNumber || (r.machine && r.machine.machineNumber === selectedMachineNumber)) &&
+      r => (normalizeMachineCode(r.machineNumber || r.machine?.machineNumber) === sel) &&
            r.status !== 'submitted' && r.status !== 'approved' &&
            (r.status === 'draft' || r.status === 'active' || r.status === 'unlocked')
     );
@@ -684,7 +686,7 @@ export default function App() {
             reports={reports}
             machines={machines}
             selectedMachineNumber={selectedMachineNumber}
-            onSelectMachine={(mcNum) => setSelectedMachineNumber(mcNum)}
+            onSelectMachine={(mcNum) => setSelectedMachineNumber(normalizeMachineCode(mcNum))}
             onOpenHourModal={(hourDef, existingEntry, session) => {
               setHourModalState({
                 isOpen: true,

@@ -17,7 +17,8 @@ import { useI18n } from '../i18n/I18nContext';
 import {
   verifyProductionDataReadiness,
   getOperators,
-  getMachinePartMappings
+  getMachinePartMappings,
+  normalizeMachineCode
 } from '../services/storageService';
 import { INITIAL_OPERATORS, INITIAL_PARTS, INITIAL_MACHINE_PART_MAPPINGS } from '../data/seedData';
 
@@ -45,16 +46,18 @@ export default function ShiftSetupModal({
   }, [initialMachineNumber, isOpen]);
 
   const selectedMachine = useMemo(() => {
-    const found = machinesList.find(m => (m.machineNumber || m.machineCode) === selectedMachineNumber);
-    if (found) return found;
+    const norm = normalizeMachineCode(selectedMachineNumber || 'MC03');
+    const found = machinesList.find(m => normalizeMachineCode(m.machineNumber || m.machineCode) === norm);
+    if (found) return { ...found, machineNumber: norm, machineCode: norm };
     return {
-      id: `m-${(selectedMachineNumber || 'mc03').toLowerCase()}`,
-      machineNumber: selectedMachineNumber || 'MC03',
-      machineName: selectedMachineNumber === 'MC04' ? 'Milacron 350T' :
-                   selectedMachineNumber === 'MC05' ? 'Milacron 250T' :
-                   selectedMachineNumber === 'MC06' ? 'Milacron 180T' : 'Milacron 450T',
-      capacityTon: selectedMachineNumber === 'MC04' ? 350 : selectedMachineNumber === 'MC05' ? 250 : selectedMachineNumber === 'MC06' ? 180 : 450,
-      tonnage: selectedMachineNumber === 'MC04' ? 350 : selectedMachineNumber === 'MC05' ? 250 : selectedMachineNumber === 'MC06' ? 180 : 450,
+      id: `m-${norm.toLowerCase()}`,
+      machineNumber: norm,
+      machineCode: norm,
+      machineName: norm === 'MC04' ? 'Milacron 350T' :
+                   norm === 'MC05' ? 'Milacron 250T' :
+                   norm === 'MC06' ? 'Milacron 180T' : 'Milacron 450T',
+      capacityTon: norm === 'MC04' ? 350 : norm === 'MC05' ? 250 : norm === 'MC06' ? 180 : 450,
+      tonnage: norm === 'MC04' ? 350 : norm === 'MC05' ? 250 : norm === 'MC06' ? 180 : 450,
       status: 'active'
     };
   }, [machinesList, selectedMachineNumber]);
@@ -112,11 +115,11 @@ export default function ShiftSetupModal({
 
   // Filter parts strictly for the selected machine based on sheet mappings
   const machineLinkedParts = useMemo(() => {
-    const selMc = (selectedMachineNumber || 'MC03').trim().toUpperCase();
+    const selMc = normalizeMachineCode(selectedMachineNumber || 'MC03');
     const linkedCodes = new Set();
 
     effectiveMappings.forEach(m => {
-      const mcNum = (m.machineCode || m.machineNumber || '').trim().toUpperCase();
+      const mcNum = normalizeMachineCode(m.machineCode || m.machineNumber || '');
       if (mcNum === selMc && m.approvedToRun !== false && m.isApproved !== false && m.status !== 'inactive') {
         const pCode = (m.partCode || m.partNumber || '').trim().toUpperCase();
         if (pCode) linkedCodes.add(pCode);
@@ -368,20 +371,15 @@ export default function ShiftSetupModal({
                   onChange={(e) => setSelectedMachineNumber(e.target.value)}
                   required
                 >
-                  {machinesList.length > 0 ? (
-                    machinesList.map(m => (
-                      <option key={m.id || m.machineNumber} value={m.machineNumber}>
-                        {m.machineNumber} ({m.machineName || `${m.tonnage || 350}T`})
+                  {['MC03', 'MC04', 'MC05', 'MC06'].map(code => {
+                    const found = machinesList.find(m => normalizeMachineCode(m.machineNumber || m.machineCode) === code);
+                    const name = found?.machineName || (code === 'MC03' ? 'Milacron 450T' : code === 'MC04' ? 'Milacron 350T' : code === 'MC05' ? 'Milacron 250T' : 'Milacron 180T');
+                    return (
+                      <option key={code} value={code}>
+                        {code} ({name})
                       </option>
-                    ))
-                  ) : (
-                    <>
-                      <option value="MC03">MC03 (Milacron 450T)</option>
-                      <option value="MC04">MC04 (Milacron 350T)</option>
-                      <option value="MC05">MC05 (Milacron 250T)</option>
-                      <option value="MC06">MC06 (Milacron 180T)</option>
-                    </>
-                  )}
+                    );
+                  })}
                 </select>
               </div>
 

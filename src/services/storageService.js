@@ -722,6 +722,28 @@ export function createDemoShiftReport() {
 }
 
 // Master getters & setters
+
+/**
+ * Normalizes machine codes like '3', '4', '04', 'mc04', 'MC 04', 'Machine 4', etc. → 'MC03', 'MC04', 'MC05', 'MC06'.
+ * Only normalizes values that correspond to our 4-machine fleet (MC03 to MC06).
+ */
+export function normalizeMachineCode(raw) {
+  if (!raw) return '';
+  const s = String(raw).trim().toUpperCase();
+  // Already canonical format MC03..MC06
+  if (/^MC0[3-6]$/.test(s)) return s;
+  // Formats like MC3..MC6
+  if (/^MC[3-6]$/.test(s)) return `MC0${s.slice(-1)}`;
+  // Plain digit 3..6 or 03..06
+  if (/^0?[3-6]$/.test(s)) return `MC0${parseInt(s, 10)}`;
+  // Formats like 'MACHINE 4', 'MACHINE 04', 'M-MC-04', 'MC-04', 'MC 04', 'LINE 4'
+  const match = s.match(/(?:MC|MACHINE|LINE|M)?[-_\s]*0?([3-6])\b/i) || s.match(/([3-6])$/);
+  if (match && match[1]) {
+    return `MC0${match[1]}`;
+  }
+  return s;
+}
+
 export function getMachines() {
   if (typeof localStorage === 'undefined') return [];
   const data = localStorage.getItem(KEYS.MACHINES);
@@ -733,37 +755,47 @@ export function getMachines() {
     { id: 'm-mc-05', machineNumber: 'MC05', machineCode: 'MC05', machineName: 'Milacron 250T', make: 'Milacron', model: '250T', capacityTon: 250, tonnage: 250, status: 'active' },
     { id: 'm-mc-06', machineNumber: 'MC06', machineCode: 'MC06', machineName: 'Milacron 180T', make: 'Milacron', model: '180T', capacityTon: 180, tonnage: 180, status: 'active' }
   ];
+  const FLEET_CODES = new Set(['MC03', 'MC04', 'MC05', 'MC06']);
 
   if (!list || list.length === 0) {
-    list = [...standardFleet];
-  } else {
-    list = list.map(m => {
-      const mcCode = m.machineNumber || m.machineCode;
-      const stdMatch = standardFleet.find(sf => sf.machineNumber === mcCode);
-      if (stdMatch) {
-        return {
-          ...m,
-          machineNumber: stdMatch.machineNumber,
-          machineCode: stdMatch.machineCode,
-          machineName: m.machineName && m.machineName !== 'Standard IMM' ? m.machineName : stdMatch.machineName,
-          make: m.make || stdMatch.make,
-          model: m.model || stdMatch.model,
-          capacityTon: m.capacityTon || stdMatch.capacityTon,
-          tonnage: m.tonnage || stdMatch.tonnage,
-          status: m.status || 'active'
-        };
-      }
-      return m;
-    });
-
-    standardFleet.forEach(sf => {
-      if (!list.some(m => (m.machineNumber || m.machineCode) === sf.machineNumber)) {
-        list.push(sf);
-      }
-    });
+    return [...standardFleet];
   }
 
-  return list;
+  // Normalize & deduplicate using a Map keyed by normalized machine code
+  const mcMap = new Map();
+  list.forEach(m => {
+    const rawCode = m.machineNumber || m.machineCode || '';
+    const normalized = normalizeMachineCode(rawCode);
+    // Only keep machines that belong to our fleet (MC03..MC06)
+    if (!FLEET_CODES.has(normalized)) return;
+    const stdMatch = standardFleet.find(sf => sf.machineNumber === normalized);
+    if (!mcMap.has(normalized)) {
+      mcMap.set(normalized, {
+        ...(stdMatch || {}),
+        ...m,
+        machineNumber: normalized,
+        machineCode: normalized,
+        machineName: (m.machineName && m.machineName !== 'Standard IMM' && m.machineName !== `${rawCode} Injection Press` && m.machineName !== `${rawCode} Production IMM`)
+          ? m.machineName
+          : (stdMatch ? stdMatch.machineName : m.machineName),
+        make: m.make || (stdMatch ? stdMatch.make : 'Milacron'),
+        model: m.model || (stdMatch ? stdMatch.model : ''),
+        capacityTon: m.capacityTon || (stdMatch ? stdMatch.capacityTon : 250),
+        tonnage: m.tonnage || m.capacityTon || (stdMatch ? stdMatch.tonnage : 250),
+        status: 'active'
+      });
+    }
+  });
+
+  // Ensure all 4 standard machines are always present
+  standardFleet.forEach(sf => {
+    if (!mcMap.has(sf.machineNumber)) {
+      mcMap.set(sf.machineNumber, sf);
+    }
+  });
+
+  // Return in fleet order: MC03, MC04, MC05, MC06 (strictly 4 machines)
+  return ['MC03', 'MC04', 'MC05', 'MC06'].map(code => mcMap.get(code)).filter(Boolean);
 }
 export function syncMasterDataToCloudBackground() {
   if (typeof window !== 'undefined') {
@@ -779,7 +811,32 @@ export function syncMasterDataToCloudBackground() {
 
 export function saveMachines(machines) {
   if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(KEYS.MACHINES, JSON.stringify(machines));
+    const standardFleet = [
+      { id: 'm-mc-03', machineNumber: 'MC03', machineCode: 'MC03', machineName: 'Milacron 450T', make: 'Milacron', model: '450T', capacityTon: 450, tonnage: 450, status: 'active' },
+      { id: 'm-mc-04', machineNumber: 'MC04', machineCode: 'MC04', machineName: 'Milacron 350T', make: 'Milacron', model: '350T', capacityTon: 350, tonnage: 350, status: 'active' },
+      { id: 'm-mc-05', machineNumber: 'MC05', machineCode: 'MC05', machineName: 'Milacron 250T', make: 'Milacron', model: '250T', capacityTon: 250, tonnage: 250, status: 'active' },
+      { id: 'm-mc-06', machineNumber: 'MC06', machineCode: 'MC06', machineName: 'Milacron 180T', make: 'Milacron', model: '180T', capacityTon: 180, tonnage: 180, status: 'active' }
+    ];
+    const mcMap = new Map();
+    standardFleet.forEach(sf => mcMap.set(sf.machineNumber, sf));
+
+    (machines || []).forEach(m => {
+      const norm = normalizeMachineCode(m.machineNumber || m.machineCode || '');
+      if (mcMap.has(norm)) {
+        const std = mcMap.get(norm);
+        mcMap.set(norm, {
+          ...std,
+          ...m,
+          machineNumber: norm,
+          machineCode: norm,
+          machineName: (m.machineName && !m.machineName.includes('Production IMM')) ? m.machineName : std.machineName,
+          status: 'active'
+        });
+      }
+    });
+
+    const fleetList = ['MC03', 'MC04', 'MC05', 'MC06'].map(code => mcMap.get(code));
+    localStorage.setItem(KEYS.MACHINES, JSON.stringify(fleetList));
   }
   syncMasterDataToCloudBackground();
 }
@@ -1009,15 +1066,108 @@ export function saveMaterials(materials) {
   localStorage.setItem(KEYS.MATERIALS, JSON.stringify(materials));
 }
 
-// Machine-Part Mappings (MC03 -> Part Codes)
+// Machine-Part Mappings (strictly MC03 to MC06 -> Part Codes)
 export function getMachinePartMappings() {
-  if (typeof localStorage === 'undefined') return [];
-  const data = localStorage.getItem(KEYS.MACHINE_PART_MAPPINGS);
-  return data ? JSON.parse(data) : [];
+  const FLEET_CODES = ['MC03', 'MC04', 'MC05', 'MC06'];
+  const BASE_MC03_PARTS = ['F53200000A', '5036677', '5012394'];
+
+  const map = new Map();
+
+  // 1. Machine 3 (MC03) MUST always retain its previously mapped baseline parts
+  BASE_MC03_PARTS.forEach(pCode => {
+    map.set(`MC03__${pCode}`, {
+      id: `map-mc03-${pCode.toLowerCase()}`,
+      machineCode: 'MC03',
+      machineNumber: 'MC03',
+      partCode: pCode,
+      partNumber: pCode,
+      mouldNumber: `MLD-${pCode}`,
+      approvedToRun: true,
+      isApproved: true,
+      status: 'active'
+    });
+  });
+
+  // 2. Load stored mappings and normalize machine codes (e.g. 4 -> MC04, 5 -> MC05, 6 -> MC06)
+  if (typeof localStorage !== 'undefined') {
+    const data = localStorage.getItem(KEYS.MACHINE_PART_MAPPINGS);
+    if (data) {
+      try {
+        const stored = JSON.parse(data);
+        if (Array.isArray(stored)) {
+          stored.forEach(m => {
+            const rawMc = m.machineCode || m.machineNumber || '';
+            const normMc = normalizeMachineCode(rawMc);
+            const pCode = (m.partCode || m.partNumber || '').trim().toUpperCase();
+            if (!FLEET_CODES.includes(normMc) || !pCode) return;
+
+            const key = `${normMc}__${pCode}`;
+            map.set(key, {
+              ...m,
+              id: m.id || `map-${normMc.toLowerCase()}-${pCode.toLowerCase()}`,
+              machineCode: normMc,
+              machineNumber: normMc,
+              partCode: pCode,
+              partNumber: pCode,
+              approvedToRun: m.approvedToRun !== false && m.isApproved !== false,
+              isApproved: m.approvedToRun !== false && m.isApproved !== false,
+              status: m.status || 'active'
+            });
+          });
+        }
+      } catch (err) {
+        console.warn('Error reading stored machine-part mappings:', err);
+      }
+    }
+  }
+
+  return Array.from(map.values());
 }
+
 export function saveMachinePartMappings(mappings) {
   if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(KEYS.MACHINE_PART_MAPPINGS, JSON.stringify(mappings));
+    const FLEET_CODES = ['MC03', 'MC04', 'MC05', 'MC06'];
+    const BASE_MC03_PARTS = ['F53200000A', '5036677', '5012394'];
+
+    const map = new Map();
+
+    // 1. Keep previous mapped parts for MC03 intact
+    BASE_MC03_PARTS.forEach(pCode => {
+      map.set(`MC03__${pCode}`, {
+        id: `map-mc03-${pCode.toLowerCase()}`,
+        machineCode: 'MC03',
+        machineNumber: 'MC03',
+        partCode: pCode,
+        partNumber: pCode,
+        mouldNumber: `MLD-${pCode}`,
+        approvedToRun: true,
+        isApproved: true,
+        status: 'active'
+      });
+    });
+
+    // 2. Add / update mappings with normalized machine codes (MC03 to MC06)
+    (mappings || []).forEach(m => {
+      const rawMc = m.machineCode || m.machineNumber || '';
+      const normMc = normalizeMachineCode(rawMc);
+      const pCode = (m.partCode || m.partNumber || '').trim().toUpperCase();
+      if (!FLEET_CODES.includes(normMc) || !pCode) return;
+
+      const key = `${normMc}__${pCode}`;
+      map.set(key, {
+        ...m,
+        id: m.id || `map-${normMc.toLowerCase()}-${pCode.toLowerCase()}`,
+        machineCode: normMc,
+        machineNumber: normMc,
+        partCode: pCode,
+        partNumber: pCode,
+        approvedToRun: m.approvedToRun !== false && m.isApproved !== false,
+        isApproved: m.approvedToRun !== false && m.isApproved !== false,
+        status: m.status || 'active'
+      });
+    });
+
+    localStorage.setItem(KEYS.MACHINE_PART_MAPPINGS, JSON.stringify(Array.from(map.values())));
   }
   syncMasterDataToCloudBackground();
 }
@@ -1041,13 +1191,12 @@ export function saveUnifiedMasterData({ parts = [], machines = [], mappings = []
         if (code) partsMap.set(code, p);
       });
 
-      // 3. Merge uploaded parts (new parts added, existing updated without altering base 3 unless specified)
+      // 3. Merge uploaded parts
       const protected3 = new Set(['F53200000A', '5036677', '5012394']);
       parts.forEach(p => {
         const code = (p.partNumber || p.partCode || '').trim().toUpperCase();
         if (!code) return;
         if (protected3.has(code)) {
-          // If already in map, retain or non-destructively merge
           const existing = partsMap.get(code);
           partsMap.set(code, { ...existing, ...p });
         } else {
@@ -1059,41 +1208,11 @@ export function saveUnifiedMasterData({ parts = [], machines = [], mappings = []
     }
 
     if (machines.length > 0) {
-      const currentMachines = getMachines();
-      const mcMap = new Map();
-      currentMachines.forEach(m => {
-        const num = (m.machineNumber || m.machineCode || '').trim().toUpperCase();
-        if (num) mcMap.set(num, m);
-      });
-      machines.forEach(m => {
-        const num = (m.machineNumber || m.machineCode || '').trim().toUpperCase();
-        if (num) {
-          if (mcMap.has(num)) {
-            mcMap.set(num, { ...mcMap.get(num), ...m });
-          } else {
-            mcMap.set(num, m);
-          }
-        }
-      });
-      localStorage.setItem(KEYS.MACHINES, JSON.stringify(Array.from(mcMap.values())));
+      saveMachines(machines);
     }
 
     if (mappings.length > 0) {
-      const currentMappings = getMachinePartMappings();
-      const mappingMap = new Map();
-      const getMapKey = (m) => `${(m.machineCode || m.machineNumber || '').trim().toUpperCase()}__${(m.partCode || m.partNumber || '').trim().toUpperCase()}`;
-
-      currentMappings.forEach(m => {
-        const key = getMapKey(m);
-        if (key !== '__') mappingMap.set(key, m);
-      });
-
-      mappings.forEach(m => {
-        const key = getMapKey(m);
-        if (key !== '__') mappingMap.set(key, m);
-      });
-
-      localStorage.setItem(KEYS.MACHINE_PART_MAPPINGS, JSON.stringify(Array.from(mappingMap.values())));
+      saveMachinePartMappings(mappings);
     }
   }
   syncMasterDataToCloudBackground();

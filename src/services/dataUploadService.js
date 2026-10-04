@@ -1,6 +1,7 @@
 // Radiance Polymers - Data Upload Center Service
 // Simple, non-ERP Excel parsing, template generation, and multi-sheet backup
 import XLSX from 'xlsx-js-style';
+import { normalizeMachineCode } from './storageService.js';
 
 // Universal Excel Download Helper supporting Desktop Chrome, Android Chrome, and Android APK
 export async function downloadWorkbook(wb, filename) {
@@ -337,10 +338,18 @@ export function parseUnifiedPartMasterExcel(arrayBuffer) {
       const partNumber = (row['partnumber'] || row['partcode'] || row['part'] || '').toString().trim();
       const partName = (row['partname'] || row['name'] || partNumber).toString().trim();
       const customerName = (row['customername'] || row['customer'] || 'Internal').toString().trim();
-      const machineNumber = (row['machinenumber'] || row['machinecode'] || row['machine'] || '').toString().trim().toUpperCase();
-      const machineName = (row['machinename'] || `${machineNumber} Production IMM`).toString().trim();
-      const machineMake = (row['machinemake'] || row['make'] || row['makemodel'] || '').toString().trim();
-      const machineTonnage = Number(row['machinetonnage'] || row['tonnage'] || row['capacitytons'] || row['capacity']) || 250;
+      const rawMachine = (row['machinenumber'] || row['machinecode'] || row['machine'] || '').toString().trim();
+      const machineNumber = normalizeMachineCode(rawMachine) || 'MC03';
+      const stdFleetDefaults = {
+        'MC03': { name: 'Milacron 450T', tonnage: 450, make: 'Milacron', model: '450T' },
+        'MC04': { name: 'Milacron 350T', tonnage: 350, make: 'Milacron', model: '350T' },
+        'MC05': { name: 'Milacron 250T', tonnage: 250, make: 'Milacron', model: '250T' },
+        'MC06': { name: 'Milacron 180T', tonnage: 180, make: 'Milacron', model: '180T' },
+      };
+      const def = stdFleetDefaults[machineNumber] || { name: `${machineNumber} Injection Press`, tonnage: 250, make: 'Milacron', model: '' };
+      const machineName = (row['machinename'] || def.name).toString().trim();
+      const machineMake = (row['machinemake'] || row['make'] || row['makemodel'] || def.make).toString().trim();
+      const machineTonnage = Number(row['machinetonnage'] || row['tonnage'] || row['capacitytons'] || row['capacity']) || def.tonnage;
       const materialGrade = (row['materialgrade'] || row['rawmaterialgrade'] || row['material'] || 'Standard Grade').toString().trim();
       const partWeight = Number(row['partweightg'] || row['partweight'] || row['weight']) || 0;
       const runnerWeight = Number(row['runnerweightg'] || row['runnerweight']) || 0;
@@ -353,7 +362,7 @@ export function parseUnifiedPartMasterExcel(arrayBuffer) {
         errors.push(`Row ${rowNum}: Missing Part Number.`);
         return;
       }
-      if (!machineNumber) {
+      if (!rawMachine) {
         rejected++;
         errors.push(`Row ${rowNum}: Missing Machine Number for Part ${partNumber}.`);
         return;
@@ -380,28 +389,36 @@ export function parseUnifiedPartMasterExcel(arrayBuffer) {
         if (!existing.rawMaterialGrade && materialGrade) existing.rawMaterialGrade = materialGrade;
       }
 
-      // 2. Machine definition
+      // 2. Machine definition (strictly standardized to fleet format MC03..MC06)
       if (!machinesMap.has(machineNumber)) {
         machinesMap.set(machineNumber, {
           id: `m-${machineNumber.toLowerCase()}`,
           machineNumber: machineNumber,
-          machineName: machineName || `${machineNumber} Injection Press`,
-          makeModel: machineMake || 'Industrial IMM',
-          capacityTon: machineTonnage > 0 ? machineTonnage : 250,
+          machineCode: machineNumber,
+          machineName: (machineName && !machineName.includes('Production IMM')) ? machineName : def.name,
+          makeModel: machineMake || `${def.make} ${def.model}`,
+          make: machineMake || def.make,
+          model: def.model,
+          capacityTon: machineTonnage > 0 ? machineTonnage : def.tonnage,
+          tonnage: machineTonnage > 0 ? machineTonnage : def.tonnage,
           hourlyCostRate: 1500,
           status: 'active'
         });
       }
 
-      // 3. Machine-Part Mapping
+      // 3. Machine-Part Mapping (strictly standardized to fleet machineCode)
       const mapKey = `${machineNumber}_${partNumber}`;
       if (!mappingsMap.has(mapKey)) {
         mappingsMap.set(mapKey, {
           id: `map-${machineNumber.toLowerCase()}-${partNumber.toLowerCase()}`,
           machineCode: machineNumber,
+          machineNumber: machineNumber,
           partCode: partNumber,
+          partNumber: partNumber,
           mouldNumber: `MLD-${partNumber}`,
-          approvedToRun: status !== 'inactive'
+          approvedToRun: status !== 'inactive',
+          isApproved: status !== 'inactive',
+          status: 'active'
         });
       }
 

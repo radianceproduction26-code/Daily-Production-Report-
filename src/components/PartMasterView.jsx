@@ -44,7 +44,8 @@ import {
   generateNextDowntimeCode,
   generateNextRejectionCode,
   clearAllRejectionCodes,
-  clearAllDowntimeCodes
+  clearAllDowntimeCodes,
+  normalizeMachineCode
 } from '../services/storageService';
 import {
   pushMasterDataToCloud,
@@ -402,9 +403,13 @@ export default function PartMasterView({
     if (!matchSearch) return false;
 
     if (filterMachine !== 'ALL') {
-      const isMapped = mappings.some(
-        m => m.machineCode === filterMachine && (m.partCode === p.partNumber || m.partCode === p.partCode)
-      );
+      const isMapped = mappings.some(m => {
+        const mc = normalizeMachineCode(m.machineCode || m.machineNumber);
+        const pNum = (p.partNumber || '').trim().toUpperCase();
+        const pCd = (p.partCode || '').trim().toUpperCase();
+        const mPart = (m.partCode || m.partNumber || '').trim().toUpperCase();
+        return mc === filterMachine && (mPart === pNum || mPart === pCd);
+      });
       if (!isMapped) return false;
     }
 
@@ -428,7 +433,7 @@ export default function PartMasterView({
       <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '4px', WebkitOverflowScrolling: 'touch' }}>
         {[
           { id: 'parts', label: `Parts (${parts.length})`, icon: Layers },
-          { id: 'machines', label: `Machines (${machines.length})`, icon: Wrench },
+          { id: 'machines', label: 'Machines (4)', icon: Wrench },
           { id: 'rejections', label: `Rejections (${rejections.length})`, icon: AlertOctagon },
           { id: 'downtimes', label: `Downtime (${downtimes.length})`, icon: Clock },
           { id: 'operators', label: `Operators (${operators.length})`, icon: Users },
@@ -583,11 +588,11 @@ export default function PartMasterView({
                 className="touch-select"
                 value={filterMachine}
                 onChange={(e) => setFilterMachine(e.target.value)}
-                style={{ width: 'auto', minWidth: '120px', height: '44px' }}
+                style={{ width: 'auto', minWidth: '130px', height: '44px' }}
               >
-                <option value="ALL">All Machines</option>
-                {machines.map(m => (
-                  <option key={m.id} value={m.machineNumber}>{m.machineNumber}</option>
+                <option value="ALL">All Machines (MC03 - MC06)</option>
+                {['MC03', 'MC04', 'MC05', 'MC06'].map(code => (
+                  <option key={code} value={code}>{code}</option>
                 ))}
               </select>
             </div>
@@ -623,9 +628,17 @@ export default function PartMasterView({
               </div>
             ) : (
               filteredParts.map(part => {
-                const mappedMachines = mappings
-                  .filter(m => m.partCode === part.partNumber || m.partCode === part.partCode)
-                  .map(m => m.machineCode);
+                const pNum = (part.partNumber || '').trim().toUpperCase();
+                const pCd = (part.partCode || '').trim().toUpperCase();
+                const mappedMachines = Array.from(new Set(
+                  mappings
+                    .filter(m => {
+                      const mPart = (m.partCode || m.partNumber || '').trim().toUpperCase();
+                      return mPart === pNum || mPart === pCd;
+                    })
+                    .map(m => normalizeMachineCode(m.machineCode || m.machineNumber))
+                    .filter(mc => ['MC03', 'MC04', 'MC05', 'MC06'].includes(mc))
+                )).sort();
 
                 return (
                   <div
@@ -1177,7 +1190,7 @@ export default function PartMasterView({
           <div className="card" style={{ padding: '14px', background: 'var(--clr-primary-lt)', border: '1px solid #7dd3fc' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--clr-primary)', fontWeight: 800, fontSize: '0.92rem' }}>
               <Wrench size={18} />
-              <span>Plant Injection Moulding Machines ({machines.length} Lines)</span>
+              <span>Plant Injection Moulding Machines (4 Lines: MC03 to MC06)</span>
             </div>
             <p style={{ fontSize: '0.8rem', color: 'var(--clr-text2)', margin: '4px 0 0 0', lineHeight: 1.4 }}>
               Active injection machines supporting parallel shift production across Machine No 3, 4, 5, and 6.
@@ -1185,14 +1198,24 @@ export default function PartMasterView({
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
-            {machines.map(m => {
+            {['MC03', 'MC04', 'MC05', 'MC06'].map(mcCode => {
+              const found = machines.find(mach => normalizeMachineCode(mach.machineNumber || mach.machineCode) === mcCode);
+              const m = found || {
+                machineNumber: mcCode,
+                machineName: mcCode === 'MC03' ? 'Milacron 450T' : mcCode === 'MC04' ? 'Milacron 350T' : mcCode === 'MC05' ? 'Milacron 250T' : 'Milacron 180T',
+                tonnage: mcCode === 'MC03' ? 450 : mcCode === 'MC04' ? 350 : mcCode === 'MC05' ? 250 : 180,
+                capacityTon: mcCode === 'MC03' ? 450 : mcCode === 'MC04' ? 350 : mcCode === 'MC05' ? 250 : 180,
+                make: 'Milacron',
+                model: mcCode === 'MC03' ? '450T' : mcCode === 'MC04' ? '350T' : mcCode === 'MC05' ? '250T' : '180T'
+              };
+
               const mappedParts = mappings.filter(
-                map => (map.machineCode || map.machineNumber) === m.machineNumber
+                map => normalizeMachineCode(map.machineCode || map.machineNumber) === mcCode
               );
 
               return (
                 <div
-                  key={m.id || m.machineNumber}
+                  key={mcCode}
                   className="card"
                   style={{
                     padding: '16px',

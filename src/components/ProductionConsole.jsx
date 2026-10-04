@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { SHIFT_HOURS_DEFINITIONS, getShiftHours } from '../data/seedData';
 import { useI18n } from '../i18n/I18nContext';
+import { normalizeMachineCode } from '../services/storageService';
 
 export default function ProductionConsole({
   activeReport,
@@ -40,7 +41,7 @@ export default function ProductionConsole({
   const { t, getRejectionDescription, getDowntimeDescription } = useI18n();
   const [showChart, setShowChart] = useState(true);
 
-  // 1. Build standardized 4-machine Fleet (MC03, MC04, MC05, MC06 + any others)
+  // 1. Build standardized 4-machine Fleet (strictly MC03, MC04, MC05, MC06 — always exactly 4)
   const fleetMachines = useMemo(() => {
     const standardFleet = [
       { id: 'm-mc-03', machineNumber: 'MC03', machineCode: 'MC03', machineName: 'Milacron 450T', make: 'Milacron', model: '450T', capacityTon: 450, tonnage: 450, status: 'active' },
@@ -49,20 +50,14 @@ export default function ProductionConsole({
       { id: 'm-mc-06', machineNumber: 'MC06', machineCode: 'MC06', machineName: 'Milacron 180T', make: 'Milacron', model: '180T', capacityTon: 180, tonnage: 180, status: 'active' }
     ];
 
-    const map = new Map();
-    standardFleet.forEach(sf => {
-      const match = (machines || []).find(m => (m.machineNumber || m.machineCode) === sf.machineNumber);
-      map.set(sf.machineNumber, match ? { ...sf, ...match } : sf);
+    // Strictly merge stored machine data into the standard fleet — never append extras.
+    // This ensures the Shifts tab always shows exactly MC03, MC04, MC05, MC06.
+    return standardFleet.map(sf => {
+      const stored = (machines || []).find(
+        m => normalizeMachineCode(m.machineNumber || m.machineCode) === sf.machineNumber
+      );
+      return stored ? { ...sf, ...stored, machineNumber: sf.machineNumber, machineCode: sf.machineNumber } : sf;
     });
-
-    (machines || []).forEach(m => {
-      const num = m.machineNumber || m.machineCode;
-      if (num && !map.has(num)) {
-        map.set(num, m);
-      }
-    });
-
-    return Array.from(map.values());
   }, [machines]);
 
   // 2. Map running reports for each machine
@@ -73,7 +68,7 @@ export default function ProductionConsole({
       const mcNum = m.machineNumber;
       // Strictly find unsubmitted active/draft/unlocked report for this machine
       const running = reports.find(
-        r => (r.machineNumber === mcNum || (r.machine && r.machine.machineNumber === mcNum)) &&
+        r => (normalizeMachineCode(r.machineNumber || r.machine?.machineNumber) === mcNum) &&
              r.status !== 'submitted' && r.status !== 'approved' &&
              (r.status === 'draft' || r.status === 'active' || r.status === 'unlocked')
       );
