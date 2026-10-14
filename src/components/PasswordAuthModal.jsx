@@ -1,9 +1,15 @@
 // Radiance Polymers - Supervisor PIN Access Modal
-// Secures Master Sheet, Dashboard, Part Master, and Settings tabs with PIN '2026'
+// Secures Master Sheet, Dashboard, Part Master, and Settings tabs.
+// PIN is configured via VITE_SUPERVISOR_PIN environment variable.
 import React, { useState, useEffect, useRef } from 'react';
 import { Lock, KeyRound, AlertCircle, X, ShieldCheck } from 'lucide-react';
 
-const CORRECT_PIN = '2026';
+// Security: PIN is read from build-time env variable, never hardcoded in source.
+// Set VITE_SUPERVISOR_PIN=<your-pin> in your .env file.
+// Falls back to a default only for local dev convenience – change before production.
+const CORRECT_PIN = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPERVISOR_PIN)
+  ? String(import.meta.env.VITE_SUPERVISOR_PIN)
+  : '2026';
 
 export default function PasswordAuthModal({
   isOpen,

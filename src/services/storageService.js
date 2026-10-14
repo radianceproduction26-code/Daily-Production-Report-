@@ -16,6 +16,44 @@ import {
 import { calculateTheoreticalHourlyTarget } from './validationEngine.js';
 import { recordAuditLog } from './auditService.js';
 
+// --- Safe localStorage helpers (Bug #14) ---
+// Wraps every read/write in try/catch to handle QuotaExceededError and corrupted JSON
+let _storageQuotaWarningShown = false;
+
+export function safeLocalStorageSet(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (err) {
+    if (err && (err.name === 'QuotaExceededError' || err.code === 22 || (err.message || '').includes('quota'))) {
+      if (!_storageQuotaWarningShown) {
+        _storageQuotaWarningShown = true;
+        // Dispatch a custom event so the UI can show a user-facing warning
+        try {
+          window.dispatchEvent(new CustomEvent('rp_storage_quota_exceeded', {
+            detail: { key, message: 'Device storage is almost full. Please export and clear old reports to free space.' }
+          }));
+        } catch (e) {}
+        console.error('[StorageService] QuotaExceededError: Storage full. Key:', key);
+      }
+    } else {
+      console.error('[StorageService] localStorage.setItem failed:', key, err);
+    }
+    return false;
+  }
+}
+
+export function safeLocalStorageGet(key, defaultValue = null) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw === null || raw === undefined) return defaultValue;
+    return JSON.parse(raw);
+  } catch (err) {
+    console.warn('[StorageService] Corrupted JSON in localStorage key:', key, '– recovering with default.');
+    return defaultValue;
+  }
+}
+
 const KEYS = {
   MACHINES: 'rp_master_machines_v1',
   MOULDS: 'rp_master_moulds_v1',
@@ -1497,27 +1535,34 @@ export function clearOperationalData() {
   localStorage.setItem(KEYS.SUPERVISORS, JSON.stringify(SUPERVISORS));
 }
 
-export function getSystemSettings() {
-  return JSON.parse(localStorage.getItem(KEYS.SETTINGS) || JSON.stringify(DEFAULT_SYSTEM_SETTINGS));
-}
 export function saveSystemSettings(settings) {
-  localStorage.setItem(KEYS.SETTINGS, JSON.stringify(settings));
+  safeLocalStorageSet(KEYS.SETTINGS, settings);
+}
+
+export function getSystemSettings() {
+  return safeLocalStorageGet(KEYS.SETTINGS, DEFAULT_SYSTEM_SETTINGS);
 }
 
 // Shift Reports Management
 export function getShiftReports() {
-  const reports = JSON.parse(localStorage.getItem(KEYS.SHIFT_REPORTS) || '[]');
-  const deletedIds = getDeletedReportIds();
-  if (deletedIds.length === 0) return reports;
-  const deletedSet = new Set(deletedIds);
-  return reports.filter(r => r && !deletedSet.has(r.id));
+  try {
+    const raw = localStorage.getItem(KEYS.SHIFT_REPORTS);
+    const reports = raw ? JSON.parse(raw) : [];
+    const deletedIds = getDeletedReportIds();
+    if (deletedIds.length === 0) return reports;
+    const deletedSet = new Set(deletedIds);
+    return reports.filter(r => r && !deletedSet.has(r.id));
+  } catch (err) {
+    console.warn('[StorageService] Corrupted shift reports – resetting to empty list:', err);
+    return [];
+  }
 }
 
 export function saveShiftReports(reports) {
   const deletedIds = getDeletedReportIds();
   const deletedSet = new Set(deletedIds);
   const cleanReports = (reports || []).filter(r => r && !deletedSet.has(r.id));
-  localStorage.setItem(KEYS.SHIFT_REPORTS, JSON.stringify(cleanReports));
+  safeLocalStorageSet(KEYS.SHIFT_REPORTS, cleanReports);
 }
 
 export function getActiveReportId() {
@@ -1662,6 +1707,27 @@ export function createNewShiftReport({
   mould, // optional backwards compatibility
   startCounter
 }) {
+  // Bug #10: Guard against duplicate sessions for the same machineId + date + shift
+  try {
+    const existingReports = getShiftReports();
+    const machineId = machine?.id || machine?.machineNumber || '';
+    const duplicate = existingReports.find(r =>
+      (r.machineId === machineId || r.machineNumber === (machine?.machineNumber || '')) &&
+      r.reportDate === reportDate &&
+      r.shift === (shift || 'Shift A')
+    );
+    if (duplicate) {
+      return {
+        success: false,
+        isDuplicate: true,
+        duplicateId: duplicate.id,
+        error: 'session_duplicate_error'
+      };
+    }
+  } catch (e) {
+    // non-fatal – continue if session list unreadable
+  }
+
   const effectivePart = part || mould || {};
   const standardCycleTime = Number(effectivePart.standardCycleTimeSeconds) || (mould && Number(mould.standardCycleTimeSeconds)) || 20;
   const actualCycleTime = Number(effectivePart.actualCycleTimeSeconds) || Number(effectivePart.cycleTime) || standardCycleTime;
@@ -1747,7 +1813,7 @@ export function createNewShiftReport({
   };
 
   saveActiveReport(newReport);
-  return newReport;
+  return { success: true, report: newReport };
 }
 
 /**
@@ -1852,7 +1918,6 @@ export function executeMouldChange({
   return { updatedReport: report, newSession };
 }
 
-/**
 /**
  * Persists Supabase configuration to local storage and updates active client
  */

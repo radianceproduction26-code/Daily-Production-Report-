@@ -20,11 +20,11 @@ export default function MaterialModal({
   onSaveMaterials
 }) {
   const { t, language } = useI18n();
-  if (!isOpen || !activeSession) return null;
 
   // Initial materials slots (Material 1 & Material 2)
+  // Guard: use optional chaining since activeSession may be null when modal is closed
   const [mat1, setMat1] = useState(
-    activeSession.materials?.find(m => m.slot === 1) || {
+    activeSession?.materials?.find(m => m.slot === 1) || {
       slot: 1,
       materialId: materialsList[0]?.id || '',
       materialCode: materialsList[0]?.materialCode || '',
@@ -37,7 +37,7 @@ export default function MaterialModal({
   );
 
   const [mat2, setMat2] = useState(
-    activeSession.materials?.find(m => m.slot === 2) || {
+    activeSession?.materials?.find(m => m.slot === 2) || {
       slot: 2,
       materialId: '',
       materialCode: '',
@@ -48,6 +48,9 @@ export default function MaterialModal({
       balanceQuantityKg: 0
     }
   );
+
+  // ─── EARLY RETURN: must come AFTER all hooks ───
+  if (!isOpen || !activeSession) return null;
 
   // Compute total session production
   const totalProduction = (activeSession.entries || []).reduce(

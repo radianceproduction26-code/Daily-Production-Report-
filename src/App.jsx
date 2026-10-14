@@ -1,6 +1,6 @@
 // Radiance Polymers - Digital Production Reporting System
 // Main Application Orchestrator
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import Header from './components/Header';
 import ProductionConsole from './components/ProductionConsole';
 import HourEntryModal from './components/HourEntryModal';
@@ -9,20 +9,22 @@ import MaterialModal from './components/MaterialModal';
 import CounterModal from './components/CounterModal';
 import ShiftSummaryDrawer from './components/ShiftSummaryDrawer';
 import ShiftSetupModal from './components/ShiftSetupModal';
-import DashboardView from './components/DashboardView';
-import ReportsView from './components/ReportsView';
-import AdminMastersView from './components/AdminMastersView';
-import AuditLogViewer from './components/AuditLogViewer';
-import SystemHealthDashboard from './components/SystemHealthDashboard';
-import TrialGoLiveDashboard from './components/TrialGoLiveDashboard';
 import SetupWizardModal from './components/SetupWizardModal';
 import MockShiftValidationModal from './components/MockShiftValidationModal';
 import TrialBanner from './components/TrialBanner';
-import SettingsView from './components/SettingsView';
-import DataUploadCenter from './components/DataUploadCenter';
-import PartMasterView from './components/PartMasterView';
-import MasterSheetView from './components/MasterSheetView';
 import PasswordAuthModal from './components/PasswordAuthModal';
+
+// Bug #3: Lazy-loaded heavy views — only fetched when the user navigates to that tab
+const DashboardView        = lazy(() => import('./components/DashboardView'));
+const ReportsView          = lazy(() => import('./components/ReportsView'));
+const MasterSheetView      = lazy(() => import('./components/MasterSheetView'));
+const PartMasterView       = lazy(() => import('./components/PartMasterView'));
+const SystemHealthDashboard = lazy(() => import('./components/SystemHealthDashboard'));
+const DataUploadCenter     = lazy(() => import('./components/DataUploadCenter'));
+const TrialGoLiveDashboard = lazy(() => import('./components/TrialGoLiveDashboard'));
+const AdminMastersView     = lazy(() => import('./components/AdminMastersView'));
+const AuditLogViewer       = lazy(() => import('./components/AuditLogViewer'));
+const SettingsView         = lazy(() => import('./components/SettingsView'));
 import { checkPilotReadiness } from './services/dataUploadService';
 import {
   pushShiftReportToCloud,
@@ -240,7 +242,7 @@ export default function App() {
   const [isSetupWizardOpen, setIsSetupWizardOpen] = useState(false);
   const [isMockValidationOpen, setIsMockValidationOpen] = useState(false);
 
-  // Supervisor PIN Protection ('2026') for non-Shifts tabs
+  // Supervisor PIN Protection (configurable via VITE_SUPERVISOR_PIN env variable) for non-Shifts tabs
   const [isSupervisorUnlocked, setIsSupervisorUnlocked] = useState(() => {
     try {
       return sessionStorage.getItem('rp_supervisor_unlocked') === 'true';
@@ -576,7 +578,24 @@ export default function App() {
 
   // 8. Create New Shift Report
   const handleCreateNewShift = (shiftData) => {
-    const newReport = createNewShiftReport(shiftData);
+    const result = createNewShiftReport(shiftData);
+
+    // Bug #10: createNewShiftReport now returns {success, report} or {success:false, isDuplicate, error}
+    if (!result || result.success === false) {
+      if (result && result.isDuplicate) {
+        const msg = result.error === 'session_duplicate_error'
+          ? 'A session for this machine, date, and shift already exists.\nPlease open the existing session instead of creating a duplicate.'
+          : 'Duplicate session detected. Please open the existing session.';
+        alert(msg);
+        // Switch to the machine so the existing session is visible
+        const createdMachineNum = shiftData.machine?.machineNumber || 'MC03';
+        setSelectedMachineNumber(createdMachineNum);
+        setActiveTab('console');
+      }
+      return;
+    }
+
+    const newReport = result.report;
     const freshReports = getShiftReports();
     setReports(freshReports);
     const createdMachineNum = shiftData.machine?.machineNumber || 'MC03';
@@ -708,98 +727,105 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'mastersheet' && (
-          <MasterSheetView
-            reports={reports}
-            onSelectReportForViewing={(rep) => {
-              if (rep?.machineNumber) {
-                setSelectedMachineNumber(rep.machineNumber);
-              }
-              setActiveTab('console');
-            }}
-            onRefreshCloud={handleRefreshCloud}
-            isSyncing={isCloudSyncing}
-            lastSyncTime={lastCloudSyncTime}
-            onDeleteReport={handleDeleteReport}
-          />
-        )}
+        {/* Bug #3: All non-console tabs are lazy-loaded – wrapped in a single Suspense boundary */}
+        <Suspense fallback={
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ width: 40, height: 40, border: '4px solid var(--clr-border)', borderTopColor: 'var(--clr-primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+            <span style={{ color: 'var(--clr-text3)', fontSize: '0.85rem' }}>Loading…</span>
+          </div>
+        }>
+          {activeTab === 'mastersheet' && (
+            <MasterSheetView
+              reports={reports}
+              onSelectReportForViewing={(rep) => {
+                if (rep?.machineNumber) {
+                  setSelectedMachineNumber(rep.machineNumber);
+                }
+                setActiveTab('console');
+              }}
+              onRefreshCloud={handleRefreshCloud}
+              isSyncing={isCloudSyncing}
+              lastSyncTime={lastCloudSyncTime}
+              onDeleteReport={handleDeleteReport}
+            />
+          )}
 
-        {(activeTab === 'dashboard' || activeTab === 'reports' || activeTab === 'analytics') && (
-          <DashboardView
-            reports={reports}
-            machines={machines}
-            rejectionCodes={rejectionCodes}
-            downtimeCodes={downtimeCodes}
-            currentUser={currentUser}
-            onSelectReportForViewing={(rep) => {
-              if (rep?.machineNumber) {
-                setSelectedMachineNumber(rep.machineNumber);
-              }
-              setActiveTab('console');
-            }}
-            initialSubTab={activeTab === 'reports' ? 'reports' : 'oee'}
-            onRefreshCloud={handleRefreshCloud}
-            isSyncing={isCloudSyncing}
-            onDeleteReport={handleDeleteReport}
-          />
-        )}
+          {(activeTab === 'dashboard' || activeTab === 'reports' || activeTab === 'analytics') && (
+            <DashboardView
+              reports={reports}
+              machines={machines}
+              rejectionCodes={rejectionCodes}
+              downtimeCodes={downtimeCodes}
+              currentUser={currentUser}
+              onSelectReportForViewing={(rep) => {
+                if (rep?.machineNumber) {
+                  setSelectedMachineNumber(rep.machineNumber);
+                }
+                setActiveTab('console');
+              }}
+              initialSubTab={activeTab === 'reports' ? 'reports' : 'oee'}
+              onRefreshCloud={handleRefreshCloud}
+              isSyncing={isCloudSyncing}
+              onDeleteReport={handleDeleteReport}
+            />
+          )}
 
-        {(activeTab === 'part-master' || activeTab === 'admin' || activeTab === 'upload-center') && (
-          <PartMasterView
-            parts={parts}
-            machines={machines}
-            mappings={mappings}
-            currentUser={currentUser}
-            onRefreshData={() => {
-              const freshParts = getParts();
-              const freshMachines = getMachines();
-              const freshMappings = getMachinePartMappings();
-              setParts(freshParts);
-              setMachines(freshMachines);
-              setMappings(freshMappings);
-            }}
-          />
-        )}
+          {(activeTab === 'part-master' || activeTab === 'admin' || activeTab === 'upload-center') && (
+            <PartMasterView
+              parts={parts}
+              machines={machines}
+              mappings={mappings}
+              currentUser={currentUser}
+              onRefreshData={() => {
+                const freshParts = getParts();
+                const freshMachines = getMachines();
+                const freshMappings = getMachinePartMappings();
+                setParts(freshParts);
+                setMachines(freshMachines);
+                setMappings(freshMappings);
+              }}
+            />
+          )}
 
-        {activeTab === 'settings' && (
-          <SettingsView
-            machines={machines}
-            moulds={moulds}
-            parts={parts}
-            usersList={USERS}
-            reports={reports}
-            settings={settings}
-            onUpdateSettings={handleUpdateSettings}
-            onOpenSetupWizard={() => setIsSetupWizardOpen(true)}
-            onOpenMockValidation={() => setIsMockValidationOpen(true)}
-            currentUser={currentUser}
-            rejectionCodes={rejectionCodes}
-            downtimeCodes={downtimeCodes}
-          />
-        )}
+          {activeTab === 'settings' && (
+            <SettingsView
+              machines={machines}
+              moulds={moulds}
+              parts={parts}
+              usersList={USERS}
+              reports={reports}
+              settings={settings}
+              onUpdateSettings={handleUpdateSettings}
+              onOpenSetupWizard={() => setIsSetupWizardOpen(true)}
+              onOpenMockValidation={() => setIsMockValidationOpen(true)}
+              currentUser={currentUser}
+              rejectionCodes={rejectionCodes}
+              downtimeCodes={downtimeCodes}
+            />
+          )}
 
+          {activeTab === 'audit' && (
+            <AuditLogViewer />
+          )}
 
-        {activeTab === 'audit' && (
-          <AuditLogViewer />
-        )}
+          {activeTab === 'health' && (
+            <SystemHealthDashboard />
+          )}
 
-        {activeTab === 'health' && (
-          <SystemHealthDashboard />
-        )}
-
-        {activeTab === 'trial' && (
-          <TrialGoLiveDashboard
-            machines={machines}
-            moulds={moulds}
-            parts={parts}
-            usersList={USERS}
-            reports={reports}
-            systemSettings={settings}
-            onOpenSetupWizard={() => setIsSetupWizardOpen(true)}
-            onOpenMockValidation={() => setIsMockValidationOpen(true)}
-            onUpdateSettings={handleUpdateSettings}
-          />
-        )}
+          {activeTab === 'trial' && (
+            <TrialGoLiveDashboard
+              machines={machines}
+              moulds={moulds}
+              parts={parts}
+              usersList={USERS}
+              reports={reports}
+              systemSettings={settings}
+              onOpenSetupWizard={() => setIsSetupWizardOpen(true)}
+              onOpenMockValidation={() => setIsMockValidationOpen(true)}
+              onUpdateSettings={handleUpdateSettings}
+            />
+          )}
+        </Suspense>
       </main>
 
       {/* 3. Global Modals & Dialogs */}

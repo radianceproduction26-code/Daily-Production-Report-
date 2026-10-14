@@ -37,7 +37,6 @@ export default function ShiftSetupModal({
   initialMachineNumber = 'MC03'
 }) {
   const { t, language } = useI18n();
-  if (!isOpen) return null;
 
   // Selected Machine: MC03, MC04, MC05, MC06, etc.
   const [selectedMachineNumber, setSelectedMachineNumber] = useState(initialMachineNumber || 'MC03');
@@ -169,6 +168,9 @@ export default function ShiftSetupModal({
       supervisorName
     });
   }, [selectedMachine, selectedPart, supervisorName]);
+
+  // ─── EARLY RETURN: must come AFTER all hooks ───
+  if (!isOpen) return null;
 
   const handleSubmit = (e) => {
     e.preventDefault();

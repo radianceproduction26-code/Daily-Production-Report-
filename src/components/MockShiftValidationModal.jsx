@@ -23,8 +23,6 @@ import {
 } from '../services/validationEngine';
 
 export default function MockShiftValidationModal({ isOpen, onClose }) {
-  if (!isOpen) return null;
-
   const [activeStepIndex, setActiveStepIndex] = useState(0);
   const [isRunningAll, setIsRunningAll] = useState(false);
 
@@ -93,6 +91,9 @@ export default function MockShiftValidationModal({ isOpen, onClose }) {
       details: 'Formats: EN / HI / Bilingual • Email Status: Queued for Dispatch'
     }
   ]);
+
+  // ─── EARLY RETURN: must come AFTER all hooks ───
+  if (!isOpen) return null;
 
   const executeStep = (index) => {
     let passed = false;

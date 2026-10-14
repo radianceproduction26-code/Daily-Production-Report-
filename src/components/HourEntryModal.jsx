@@ -151,26 +151,26 @@ export default function HourEntryModal({
 }) {
   const { language, getRejectionDescription, getDowntimeDescription } = useI18n();
 
-  if (!isOpen || !activeSession) return null;
-
   // Track session and mould change inline state
+  // NOTE: activeSession may be null when modal is closed; all hooks must guard with optional chaining
   const [currentSession, setCurrentSession] = useState(activeSession);
   const [showMouldPicker, setShowMouldPicker] = useState(false);
   const [mouldChangeNotice, setMouldChangeNotice] = useState(null);
 
   React.useEffect(() => {
-    setCurrentSession(activeSession);
+    if (activeSession) setCurrentSession(activeSession);
   }, [activeSession?.id, activeSession?.mouldNumber]);
 
   // Available tools/moulds strictly allocated to this machine
   const availableMoulds = React.useMemo(() => {
+    if (!activeSession) return partsList || [];
     const currentMc = activeReport?.machineNumber || activeReport?.machine?.machineNumber || 'MC03';
     const effectiveList = (partsList && partsList.length > 0) ? partsList : getParts();
     const machineAllocated = (effectiveList || []).filter(p =>
       p && p.status !== 'inactive' && isPartAllocatedToMachine(p, currentMc)
     );
     return machineAllocated.length > 0 ? machineAllocated : effectiveList;
-  }, [partsList, activeReport?.machineNumber]);
+  }, [partsList, activeReport?.machineNumber, activeSession]);
 
   // Default picked mould to one of the other 2 moulds
   const otherMoulds = availableMoulds.filter(m => (m.partNumber || m.partCode) !== (currentSession?.partNumber || currentSession?.mouldNumber));
@@ -181,6 +181,57 @@ export default function HourEntryModal({
   const [changeCycleTime, setChangeCycleTime] = useState(
     pickedMould?.standardCycleTimeSeconds ? String(pickedMould.standardCycleTimeSeconds) : '20'
   );
+
+  // Gross Production state
+  const [productionQty, setProductionQty] = useState(
+    existingEntry ? String(existingEntry.productionQty) : ''
+  );
+
+  // Dynamic Rejection Rows: array of { id, code, qty }
+  const [rejectionRows, setRejectionRows] = useState(() => {
+    if (existingEntry?.rejectionBreakdown && existingEntry.rejectionBreakdown.length > 0) {
+      return existingEntry.rejectionBreakdown.map((r, i) => ({
+        id: 'rej-' + i + '-' + Date.now(),
+        code: r.code || 'A',
+        qty: String(r.qty || r.quantity || 0)
+      }));
+    }
+    if (existingEntry && Number(existingEntry.rejectionQty) > 0) {
+      return [{
+        id: 'rej-0-' + Date.now(),
+        code: existingEntry.primaryRejectionCode || rejectionCodes[0]?.code || 'A',
+        qty: String(existingEntry.rejectionQty)
+      }];
+    }
+    return [];
+  });
+
+  // Dynamic Downtime Rows: array of { id, code, minutes }
+  const [downtimeRows, setDowntimeRows] = useState(() => {
+    if (existingEntry?.downtimeBreakdown && existingEntry.downtimeBreakdown.length > 0) {
+      return existingEntry.downtimeBreakdown.map((d, i) => ({
+        id: 'dt-' + i + '-' + Date.now(),
+        code: d.code || '',
+        minutes: String(d.minutes || 0)
+      }));
+    }
+    if (existingEntry && Number(existingEntry.downtimeMinutes) > 0) {
+      return [{
+        id: 'dt-0-' + Date.now(),
+        code: existingEntry.primaryDowntimeCode || downtimeCodes[0]?.code || '',
+        minutes: String(existingEntry.downtimeMinutes)
+      }];
+    }
+    return [];
+  });
+
+  const [remarks,    setRemarks]    = useState(existingEntry?.remarks || '');
+  const [editReason, setEditReason] = useState('');
+
+  // ─── EARLY RETURN: must come AFTER all hooks ───
+  // Returning null here is safe because all hooks above have already been called unconditionally.
+  if (!isOpen || !activeSession) return null;
+
 
   const handleSelectMould = (m) => {
     setPickedMouldId(m.id);
@@ -234,53 +285,7 @@ export default function HourEntryModal({
     setShowMouldPicker(false);
   };
 
-  const theoreticalTarget = currentSession?.theoreticalHourlyTarget || activeSession.theoreticalHourlyTarget;
-
-  // Gross Production state
-  const [productionQty, setProductionQty] = useState(
-    existingEntry ? String(existingEntry.productionQty) : ''
-  );
-
-  // Dynamic Rejection Rows: array of { id, code, qty }
-  const [rejectionRows, setRejectionRows] = useState(() => {
-    if (existingEntry?.rejectionBreakdown && existingEntry.rejectionBreakdown.length > 0) {
-      return existingEntry.rejectionBreakdown.map((r, i) => ({
-        id: 'rej-' + i + '-' + Date.now(),
-        code: r.code || 'A',
-        qty: String(r.qty || r.quantity || 0)
-      }));
-    }
-    if (existingEntry && Number(existingEntry.rejectionQty) > 0) {
-      return [{
-        id: 'rej-0-' + Date.now(),
-        code: existingEntry.primaryRejectionCode || rejectionCodes[0]?.code || 'A',
-        qty: String(existingEntry.rejectionQty)
-      }];
-    }
-    return [];
-  });
-
-  // Dynamic Downtime Rows: array of { id, code, minutes }
-  const [downtimeRows, setDowntimeRows] = useState(() => {
-    if (existingEntry?.downtimeBreakdown && existingEntry.downtimeBreakdown.length > 0) {
-      return existingEntry.downtimeBreakdown.map((d, i) => ({
-        id: 'dt-' + i + '-' + Date.now(),
-        code: d.code || '',
-        minutes: String(d.minutes || 0)
-      }));
-    }
-    if (existingEntry && Number(existingEntry.downtimeMinutes) > 0) {
-      return [{
-        id: 'dt-0-' + Date.now(),
-        code: existingEntry.primaryDowntimeCode || downtimeCodes[0]?.code || '',
-        minutes: String(existingEntry.downtimeMinutes)
-      }];
-    }
-    return [];
-  });
-
-  const [remarks,    setRemarks]    = useState(existingEntry?.remarks || '');
-  const [editReason, setEditReason] = useState('');
+  const theoreticalTarget = currentSession?.theoreticalHourlyTarget || activeSession?.theoreticalHourlyTarget || 0;
 
   // Dynamic code creation disabled for operator safety (Standard plant master codes only)
 
@@ -297,9 +302,9 @@ export default function HourEntryModal({
     productionQty:       Number(productionQty)   || 0,
     rejectionQty:        totalRejectionQty,
     downtimeMinutes:     totalDowntimeMinutes,
-    cycleTimeSeconds:    activeSession.standardCycleTimeSeconds,
-    cavityCount:         activeSession.cavityCount,
-    isSessionClosed:     activeSession.status === 'closed',
+    cycleTimeSeconds:    activeSession?.standardCycleTimeSeconds || 0,
+    cavityCount:         activeSession?.cavityCount || 1,
+    isSessionClosed:     activeSession?.status === 'closed',
     enforceTimeBalance:  true,
     bufferMinutes:       5,
     lang: language

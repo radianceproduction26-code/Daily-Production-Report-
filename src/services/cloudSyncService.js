@@ -69,7 +69,9 @@ export function summarizeReportForMasterSync(report) {
   }
 
   const rejectionRate = totalProd > 0 ? Number(((totalRej / totalProd) * 100).toFixed(2)) : 0.00;
-  const efficiency = totalTarget > 0 ? Number(((totalProd / totalTarget) * 100).toFixed(2)) : 0.00;
+  // Bug #6: clamp efficiency to [0, 100] – overproduction must not corrupt cloud KPIs
+  const rawEfficiency = totalTarget > 0 ? (totalProd / totalTarget) * 100 : 0;
+  const efficiency = Number(Math.min(100, Math.max(0, isFinite(rawEfficiency) ? rawEfficiency : 0)).toFixed(2));
 
   return {
     id: String(report.id || `rep-${Date.now()}`),

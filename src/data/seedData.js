@@ -189,11 +189,18 @@ export function getShiftHours(shift = 'Shift A') {
   return SHIFT_A_HOURS_DEFINITIONS;
 }
 
+// Security: admin email list is configured via VITE_AUTO_EMAIL_RECIPIENTS env variable
+// (comma-separated). If not set, defaults to empty list (no auto-emails sent).
+// Set in .env: VITE_AUTO_EMAIL_RECIPIENTS=planthead@example.com,quality@example.com
+const _envEmails = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_AUTO_EMAIL_RECIPIENTS)
+  ? import.meta.env.VITE_AUTO_EMAIL_RECIPIENTS.split(',').map(e => e.trim()).filter(Boolean)
+  : [];
+
 export const DEFAULT_SYSTEM_SETTINGS = {
   shotCounterTolerancePercent: 3.0,
   materialVarianceTolerancePercent: 5.0,
   enableStrictCycleValidation: true,
-  autoEmailRecipients: ['planthead@radiancepolymers.com', 'quality@radiancepolymers.com', 'production@radiancepolymers.com'],
+  autoEmailRecipients: _envEmails,
   plantName: 'Radiance Polymers Pvt. Ltd.',
   unitLocation: 'Plot 42, Sector 7, Industrial Area, Pune',
 };

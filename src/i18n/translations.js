@@ -164,10 +164,13 @@ export const TRANSLATIONS = {
     val_v5_counter_monotonic: 'Validation 5 Block: Machine End Counter ({end}) must be greater than Start Counter ({start}).',
     val_v6_shot_variance: 'Validation 6 Alert: Production vs Shot variance is {varPct}% (Delta: {delta} pcs). Expected {expected} pcs from {shots} shots.',
     val_v7_material_variance: 'Validation 7 Alert: Material consumption variance is {varPct}% ({actual} kg used vs {expected} kg theoretical). Check purge/scrap.',
+    val_v7_material_missing: 'Validation 7 Alert: Material log is missing! Expected {expected} kg of resin but 0 kg was recorded. Please log actual material used.',
     val_v8_session_closed: 'Validation 8 Block: This mould session is closed. No new entries can be added or modified.',
     val_machine_code_format: 'Validation Error: Invalid machine code "{code}". Machine code must follow strict pattern MC + 2 digits (e.g. MC01 to MC99).',
     val_time_unaccounted: 'Hourly Time Accounting Error: Only {accounted} of 60 minutes accounted for (Production: {prodMin} min, Downtime: {dtMin} min). A minimum of {minAllowed} minutes must be recorded ({buffer} min buffer). {missing} minutes remain unaccounted for.',
-    val_time_exceeded: 'Hourly Time Accounting Error: Total accounted time ({accounted} min) exceeds allowable limit of {maxAllowedTime} min (Production: {prodMin} min, Downtime: {dtMin} min).'
+    val_time_exceeded: 'Hourly Time Accounting Error: Total accounted time ({accounted} min) exceeds allowable limit of {maxAllowedTime} min (Production: {prodMin} min, Downtime: {dtMin} min).',
+    session_duplicate_error: 'Session already exists for this machine, date, and shift. Please open the existing session instead.',
+    session_duplicate_error_action: 'Open Existing Session'
   },
 
   hi: {
@@ -332,10 +335,13 @@ export const TRANSLATIONS = {
     val_v5_counter_monotonic: 'सत्यापन 5 अवरोध: मशीन अंतिम काउंटर ({end}) प्रारंभिक काउंटर ({start}) से अधिक होना चाहिए।',
     val_v6_shot_variance: 'सत्यापन 6 चेतावनी: उत्पादन और शॉट में अंतर {varPct}% है (अंतर: {delta} pcs)। {shots} शॉट्स से {expected} pcs अपेक्षित थे।',
     val_v7_material_variance: 'सत्यापन 7 चेतावनी: सामग्री खपत में अंतर {varPct}% है ({actual} kg उपयोग vs {expected} kg सैद्धांतिक)। स्क्रैप/पर्ज की जाँच करें।',
+    val_v7_material_missing: 'सत्यापन 7 चेतावनी: सामग्री लॉग नहीं मिला! {expected} kg रेज़िन अपेक्षित था परन्तु 0 kg दर्ज किया गया। कृपया वास्तविक सामग्री उपयोग दर्ज करें।',
     val_v8_session_closed: 'सत्यापन 8 अवरोध: यह मोल्ड सत्र बंद हो चुका है। इसमें नए रिकॉर्ड जोड़ना या बदलना वर्जित है।',
     val_machine_code_format: 'सत्यापन त्रुटि: अमान्य मशीन कोड "{code}"। मशीन कोड MC + 2 अंक पैटर्न (उदा. MC01 से MC99) के अनुसार होना अनिवार्य है।',
     val_time_unaccounted: 'घंटे का समय असंतुलित: 60 में से केवल {accounted} मिनट दर्ज हैं (उत्पादन: {prodMin} मि, डाउनटाइम: {dtMin} मि)। न्यूनतम {minAllowed} मिनट दर्ज होना आवश्यक है ({buffer} मि बफर)। {missing} मिनट का हिसाब अधूरा है।',
-    val_time_exceeded: 'घंटे का समय सीमा से अधिक: कुल दर्ज समय ({accounted} मि) अनुमत सीमा {maxAllowedTime} मि से अधिक है (उत्पादन: {prodMin} मि, डाउनटाइम: {dtMin} मि)।'
+    val_time_exceeded: 'घंटे का समय सीमा से अधिक: कुल दर्ज समय ({accounted} मि) अनुमत सीमा {maxAllowedTime} मि से अधिक है (उत्पादन: {prodMin} मि, डाउनटाइम: {dtMin} मि)।',
+    session_duplicate_error: 'इस मशीन, तारीख और शिफ्ट के लिए सत्र पहले से मौजूद है। कृपया मौजूदा सत्र खोलें।',
+    session_duplicate_error_action: 'मौजूदा सत्र खोलें'
   }
 };
 

@@ -27,14 +27,13 @@ export default function MouldChangeModal({
   initialHourIndex = null
 }) {
   const { t, language } = useI18n();
-  if (!isOpen || !activeSession) return null;
 
-  const maxLoggedHour = (activeSession.entries || []).reduce((max, e) => Math.max(max, Number(e.hourIndex) || 0), 0);
+  const maxLoggedHour = (activeSession?.entries || []).reduce((max, e) => Math.max(max, Number(e.hourIndex) || 0), 0);
   const defaultEffectiveHour = initialHourIndex || (maxLoggedHour > 0 ? Math.min(12, maxLoggedHour + 1) : 6);
   const [effectiveHour, setEffectiveHour] = useState(defaultEffectiveHour);
 
   const [endCounter, setEndCounter] = useState(
-    activeSession.endCounter ? String(activeSession.endCounter) : String(activeSession.startCounter + 500)
+    activeSession?.endCounter ? String(activeSession.endCounter) : String((activeSession?.startCounter || 0) + 500)
   );
   const [endReason, setEndReason] = useState('Production order target achieved');
 
@@ -46,7 +45,7 @@ export default function MouldChangeModal({
   );
 
   const eligibleParts = machineParts.filter(p =>
-    (p.partCode !== activeSession.partNumber && p.partNumber !== activeSession.partNumber)
+    (p.partCode !== activeSession?.partNumber && p.partNumber !== activeSession?.partNumber)
   );
 
   const displayParts = eligibleParts.length > 0
@@ -64,7 +63,7 @@ export default function MouldChangeModal({
   const [selectedPartId, setSelectedPartId] = useState(displayParts[0]?.id || '');
   const selectedPart = displayParts.find(p => p.id === selectedPartId) || displayParts[0] || null;
   const [operatorName, setOperatorName] = useState(
-    activeSession.operator_name || activeSession.operatorName || operatorsList[0]?.operatorName || 'Shreyank'
+    activeSession?.operator_name || activeSession?.operatorName || operatorsList[0]?.operatorName || 'Shreyank'
   );
 
   // Editable Cycle Time state for new tool
@@ -77,6 +76,9 @@ export default function MouldChangeModal({
       setCycleTime(String(selectedPart.standardCycleTimeSeconds));
     }
   }, [selectedPart?.id]);
+
+  // ─── EARLY RETURN: must come AFTER all hooks ───
+  if (!isOpen || !activeSession) return null;
 
   const activeCycleTime = parseFloat(cycleTime) > 0
     ? parseFloat(cycleTime)

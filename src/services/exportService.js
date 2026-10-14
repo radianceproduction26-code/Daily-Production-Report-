@@ -6,6 +6,24 @@ import { downloadWorkbook } from './dataUploadService.js';
 import { getRejectionCodes, getDowntimeCodes } from './storageService.js';
 
 /**
+ * Bug #5: Excel / CSV Formula Injection Sanitizer
+ * Any user-entered string beginning with =, +, -, @, TAB, or CR must be prefixed
+ * with a single quote to prevent Excel from treating it as a formula.
+ * Numeric cells and intentional formula cells are NOT sanitized.
+ * @param {any} val - The cell value to sanitize
+ * @returns {any} - Sanitized value safe to write into a worksheet cell
+ */
+export function sanitizeExcelCell(val) {
+  if (typeof val !== 'string') return val;
+  // Correct regex: matches leading =, +, -, @, tab (\t), or carriage return (\r)
+  if (/^[=+\-@\t\r]/.test(val)) {
+    return "'" + val;
+  }
+  return val;
+}
+
+
+/**
  * Exports a beautifully styled, audit-ready single-sheet Excel report.
  * - Single sheet containing all shift data and 12 chronological hours
  * - Proper color coding: Navy header, soft green for accepted, soft red for rejections, soft amber for downtime, slate totals
@@ -243,8 +261,8 @@ export function exportShiftReportToExcel(report) {
     dataRowIndices.push(rows.length);
     rows.push([
       formatSlot(entry.hourInterval, entry.hourIndex),
-      entry.partNumber,
-      entry.partName,
+      sanitizeExcelCell(entry.partNumber),
+      sanitizeExcelCell(entry.partName),
       Number(entry.cycleTime) || 25,
       Number(entry.theoreticalTarget) || 0,
       Number(entry.productionQty) || 0,
@@ -252,9 +270,9 @@ export function exportShiftReportToExcel(report) {
       Number(entry.rejectionQty) || 0,
       Number(entry.downtimeMinutes) || 0,
       runMin,
-      rejReasons,
-      dtReasons,
-      entry.remarks || '-'
+      sanitizeExcelCell(rejReasons),
+      sanitizeExcelCell(dtReasons),
+      sanitizeExcelCell(entry.remarks || '-')
     ]);
   });
 

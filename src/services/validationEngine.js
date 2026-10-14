@@ -6,10 +6,12 @@
  * Formula: (3600 / Cycle Time in seconds) * Cavity Count
  */
 export function calculateTheoreticalHourlyTarget(cycleTimeSeconds, cavityCount) {
-  if (!cycleTimeSeconds || cycleTimeSeconds <= 0 || !cavityCount || cavityCount <= 0) {
+  const ct = Number(cycleTimeSeconds);
+  const cav = Number(cavityCount);
+  if (!ct || !isFinite(ct) || ct <= 0 || !cav || !isFinite(cav) || cav <= 0) {
     return 0;
   }
-  return Math.floor((3600 / Number(cycleTimeSeconds)) * Number(cavityCount));
+  return Math.floor((3600 / ct) * cav);
 }
 
 /**
@@ -235,8 +237,15 @@ export function validateMaterialConsumption({
   tolerancePercent = 5.0,
   lang = 'en'
 }) {
+  // Bug #11: undefined/null material payload → not abnormal
+  if (actualTotalProduction === undefined && totalMaterialUsedKg === undefined) {
+    return { expectedUsageKg: 0, actualUsedKg: 0, varianceKg: 0, variancePercent: 0, warnings: [], isAbnormal: false };
+  }
+
   const warnings = [];
-  const prod = Number(actualTotalProduction) || 0;
+  // Bug #9: sanitise production quantity – NaN and negative → 0
+  const rawProd = Number(actualTotalProduction);
+  const prod = (!isFinite(rawProd) || rawProd < 0) ? 0 : rawProd;
   const partWt = Number(partWeightGrams) || 0;
   const runnerWt = Number(runnerWeightGrams) || 0;
   const actualUsedKg = Number(totalMaterialUsedKg) || 0;
@@ -246,7 +255,18 @@ export function validateMaterialConsumption({
   const varianceKg = actualUsedKg - expectedUsageKg;
   const variancePercent = expectedUsageKg > 0 ? (Math.abs(varianceKg) / expectedUsageKg) * 100 : 0;
 
-  if (actualUsedKg > 0 && variancePercent > tolerancePercent) {
+  // Bug #8: when expected > 0 and actual === 0, flag as abnormal (missing material log)
+  const isMissingLog = expectedUsageKg > 0 && actualUsedKg === 0;
+  // Standard variance check for positive actual values
+  const isHighVariance = expectedUsageKg > 0 && actualUsedKg > 0 && variancePercent > tolerancePercent;
+
+  if (isMissingLog) {
+    warnings.push(
+      getValMessage('val_v7_material_missing', lang, {
+        expected: expectedUsageKg.toFixed(2)
+      })
+    );
+  } else if (isHighVariance) {
     warnings.push(
       getValMessage('val_v7_material_variance', lang, {
         varPct: variancePercent.toFixed(1),
@@ -262,7 +282,7 @@ export function validateMaterialConsumption({
     varianceKg,
     variancePercent,
     warnings,
-    isAbnormal: variancePercent > tolerancePercent
+    isAbnormal: isMissingLog || isHighVariance
   };
 }
 
@@ -291,7 +311,9 @@ export function calculateOEEMetrics({
   const performance = theoreticalMaxPossible > 0 ? Math.min(1.0, totalProductionQty / theoreticalMaxPossible) : 0;
 
   // 3. Quality = Accepted Qty / Total Production Qty
-  const quality = totalProductionQty > 0 ? acceptedQty / totalProductionQty : 1.0;
+  // Bug #7: clamp quality to [0, 1] – accepted can never exceed total
+  const rawQuality = totalProductionQty > 0 ? (acceptedQty / totalProductionQty) : 1.0;
+  const quality = Math.min(1.0, Math.max(0, isFinite(rawQuality) ? rawQuality : 1.0));
 
   // Overall OEE = Availability * Performance * Quality
   const oee = availability * performance * quality;

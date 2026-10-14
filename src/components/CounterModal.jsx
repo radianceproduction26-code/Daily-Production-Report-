@@ -20,12 +20,16 @@ export default function CounterModal({
   tolerancePercent = 3.0
 }) {
   const { t, language } = useI18n();
-  if (!isOpen || !activeSession) return null;
 
-  const [startCounter, setStartCounter] = useState(String(activeSession.startCounter || 0));
+  const [startCounter, setStartCounter] = useState(String(activeSession?.startCounter || 0));
   const [endCounter, setEndCounter] = useState(
-    activeSession.endCounter ? String(activeSession.endCounter) : String(Number(activeSession.startCounter || 0) + 1200)
+    activeSession?.endCounter
+      ? String(activeSession.endCounter)
+      : String(Number(activeSession?.startCounter || 0) + 1200)
   );
+
+  // ─── EARLY RETURN: must come AFTER all hooks ───
+  if (!isOpen || !activeSession) return null;
 
   const totalProd = (activeSession.entries || []).reduce(
     (sum, e) => sum + (Number(e.productionQty) || 0),
