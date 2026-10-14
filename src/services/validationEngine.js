@@ -238,7 +238,7 @@ export function validateMaterialConsumption({
   lang = 'en'
 }) {
   // Bug #11: undefined/null material payload → not abnormal
-  if (actualTotalProduction === undefined && totalMaterialUsedKg === undefined) {
+  if (totalMaterialUsedKg === undefined || totalMaterialUsedKg === null) {
     return { expectedUsageKg: 0, actualUsedKg: 0, varianceKg: 0, variancePercent: 0, warnings: [], isAbnormal: false };
   }
 

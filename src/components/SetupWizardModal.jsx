@@ -51,8 +51,6 @@ export default function SetupWizardModal({
   usersList = [],
   onCompleteWizard
 }) {
-  if (!isOpen) return null;
-
   const [currentStep, setCurrentStep] = useState(1);
 
   // Upload States
@@ -70,6 +68,9 @@ export default function SetupWizardModal({
 
   // Template Download Feedback State
   const [downloadFeedback, setDownloadFeedback] = useState(null);
+
+  // ─── EARLY RETURN: must come AFTER all hooks ───
+  if (!isOpen) return null;
 
   const handleDownloadPart = async () => {
     const res = await downloadUnifiedPartMasterTemplate();

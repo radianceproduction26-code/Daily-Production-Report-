@@ -35,14 +35,13 @@ export default function ShiftSummaryDrawer({
   onDeleteReport
 }) {
   const { t, language } = useI18n();
-  if (!isOpen || !activeReport) return null;
 
-  const [supervisorNotes, setSupervisorNotes] = useState(activeReport.supervisorNotes || '');
+  const [supervisorNotes, setSupervisorNotes] = useState(activeReport?.supervisorNotes || '');
   const [selectedSupervisor, setSelectedSupervisor] = useState(
-    activeReport.supervisorName || (currentUser?.role === 'supervisor' ? currentUser.fullName : 'Mr. Lokesh')
+    activeReport?.supervisorName || (currentUser?.role === 'supervisor' ? currentUser.fullName : 'Mr. Lokesh')
   );
   const [lumpsGeneratedKg, setLumpsGeneratedKg] = useState(
-    activeReport.lumpsGeneratedKg !== undefined && activeReport.lumpsGeneratedKg !== null
+    activeReport?.lumpsGeneratedKg !== undefined && activeReport?.lumpsGeneratedKg !== null
       ? activeReport.lumpsGeneratedKg
       : ''
   );
@@ -50,6 +49,9 @@ export default function ShiftSummaryDrawer({
   const [isEmailing, setIsEmailing] = useState(false);
   const [emailStatus, setEmailStatus] = useState(null);
   const [backupStatus, setBackupStatus] = useState(() => getDailyBackupStatus()?.status || 'SUCCESS');
+
+  // ─── EARLY RETURN: must come AFTER all hooks ───
+  if (!isOpen || !activeReport) return null;
 
   // Aggregate stats across all sessions in the shift
   let totalProduction = 0;

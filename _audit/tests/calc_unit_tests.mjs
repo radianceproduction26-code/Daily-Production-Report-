@@ -1,4 +1,4 @@
-﻿// Radiance Polymers Audit - Calculation Unit Tests
+// Radiance Polymers Audit - Calculation Unit Tests
 // Run: node _audit/tests/calc_unit_tests.mjs
 import { writeFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -6,13 +6,27 @@ import { dirname, join } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dir = dirname(__filename);
 
-function calculateTheoreticalHourlyTarget(ct,cav){if(!ct||ct<=0||!cav||cav<=0)return 0;return Math.floor((3600/Number(ct))*Number(cav));}
-function calculateMaxAllowedProduction(ct,cav,dt=0){const d=Math.max(0,Math.min(60,Number(dt)||0));const r=(60-d)*60;if(r<=0||!ct||ct<=0)return 0;return Math.floor((r/Number(ct))*Number(cav));}
-function calculateOEEMetrics({plannedProductionTimeMinutes=480,totalDowntimeMinutes=0,totalProductionQty=0,acceptedQty=0,standardCycleTimeSeconds=20,cavityCount=2}){const p=Math.max(1,Number(plannedProductionTimeMinutes)||480);const d=Math.min(p,Math.max(0,Number(totalDowntimeMinutes)||0));const op=p-d;const av=op/p;const th=op>0&&standardCycleTimeSeconds>0?(op*60/standardCycleTimeSeconds)*cavityCount:0;const perf=th>0?Math.min(1.0,totalProductionQty/th):0;const qual=totalProductionQty>0?acceptedQty/totalProductionQty:1.0;const oee=av*perf*qual;return{availabilityPercent:(av*100).toFixed(1),performancePercent:(perf*100).toFixed(1),qualityPercent:(qual*100).toFixed(1),oeePercent:(oee*100).toFixed(1),operatingTimeMinutes:op,theoreticalMaxPossible:Math.floor(th)};}
-function validateCounters({startCounter,endCounter,cavityCount,actualTotalProduction,tolerancePercent=3.0}){const errors=[];const warnings=[];const s=Number(startCounter)||0;const e=Number(endCounter)||0;const cav=Number(cavityCount)||1;const ap=Number(actualTotalProduction)||0;if(e<=s){errors.push(`End(${e}) <= Start(${s})`);return{isValid:false,errors,warnings,totalShots:0,expectedProduction:0,variancePcs:0,variancePercent:0};}const ts=e-s;const ep=ts*cav;const vp=ap-ep;const vpc=ep>0?(Math.abs(vp)/ep)*100:0;if(vpc>tolerancePercent)warnings.push(`Variance ${vpc.toFixed(1)}%`);return{isValid:errors.length===0,errors,warnings,totalShots:ts,expectedProduction:ep,variancePcs:vp,variancePercent:vpc};}
-function validateMaterialConsumption({actualTotalProduction,partWeightGrams,runnerWeightGrams,totalMaterialUsedKg,tolerancePercent=5.0}){const warnings=[];const p=Number(actualTotalProduction)||0;const pw=Number(partWeightGrams)||0;const rw=Number(runnerWeightGrams)||0;const au=Number(totalMaterialUsedKg)||0;const sw=pw+rw;const eu=(p*sw)/1000;const vk=au-eu;const vpc=eu>0?(Math.abs(vk)/eu)*100:0;if(au>0&&vpc>tolerancePercent)warnings.push(`Variance ${vpc.toFixed(1)}%`);return{expectedUsageKg:eu,actualUsedKg:au,varianceKg:vk,variancePercent:vpc,warnings,isAbnormal:vpc>tolerancePercent};}
-function calcRejectionRate(rej,prod){return prod>0?Number(((rej/prod)*100).toFixed(2)):0.00;}
-function calcEfficiency(prod,target){return target>0?Number(((prod/target)*100).toFixed(2)):0.00;}
+import {
+  calculateTheoreticalHourlyTarget,
+  calculateMaxAllowedProduction,
+  calculateOEEMetrics,
+  validateCounters,
+  validateMaterialConsumption
+} from '../../src/services/validationEngine.js';
+
+function calcRejectionRate(rej, prod) {
+  const p = Number(prod) || 0;
+  const r = Number(rej) || 0;
+  if (p <= 0 || r <= 0) return 0.00;
+  return Number(Math.min(100, (r / p) * 100).toFixed(2));
+}
+
+function calcEfficiency(prod, target) {
+  const t = Number(target) || 0;
+  const p = Number(prod) || 0;
+  if (t <= 0 || p <= 0) return 0.00;
+  return Number(Math.min(100, (p / t) * 100).toFixed(2));
+}
 
 let passed=0,failed=0;const results=[];
 function test(name,fn){try{fn();console.log(`  PASS: ${name}`);passed++;results.push({name,status:'PASS'});}catch(e){console.log(`  FAIL: ${name} => ${e.message}`);failed++;results.push({name,status:'FAIL',error:e.message});}}
@@ -58,7 +72,7 @@ test('C6 Zero prod -> OEE 0%',()=>{const r=calculateOEEMetrics({totalProductionQ
 test('C7 Zero planned time no crash',()=>{const r=calculateOEEMetrics({plannedProductionTimeMinutes:0,totalProductionQty:100,acceptedQty:90,standardCycleTimeSeconds:20,cavityCount:2});ok(typeof r.oeePercent==='string');});
 test('C8 Overproduction capped at 100%',()=>{const r=calculateOEEMetrics({totalProductionQty:99999,acceptedQty:99999,standardCycleTimeSeconds:20,cavityCount:2});eq(r.performancePercent,'100.0');});
 test('C9 Negative DT -> avail 100%',()=>{const r=calculateOEEMetrics({totalDowntimeMinutes:-100,totalProductionQty:2880,acceptedQty:2880,standardCycleTimeSeconds:20,cavityCount:2});eq(r.availabilityPercent,'100.0');});
-test('C10 BUG: acc>prod quality>100%',()=>{const r=calculateOEEMetrics({totalProductionQty:100,acceptedQty:200,standardCycleTimeSeconds:20,cavityCount:2});ok(parseFloat(r.qualityPercent)>100,'BUG confirmed: quality>100%');});
+test('C10: acc>prod quality clamped to 100%',()=>{const r=calculateOEEMetrics({totalProductionQty:100,acceptedQty:200,standardCycleTimeSeconds:20,cavityCount:2});eq(r.qualityPercent,'100.0');});
 test('C11 String inputs no crash',()=>{const r=calculateOEEMetrics({plannedProductionTimeMinutes:'abc',totalDowntimeMinutes:'xyz',totalProductionQty:0,acceptedQty:0,standardCycleTimeSeconds:20,cavityCount:2});ok(typeof r.oeePercent==='string');});
 
 console.log('D. Counter Validation');
@@ -81,7 +95,7 @@ test('E3 8% variance flagged',()=>{const r=validateMaterialConsumption({actualTo
 test('E4 1670 pcs material check',()=>{const r=validateMaterialConsumption({actualTotalProduction:1670,partWeightGrams:42.5,runnerWeightGrams:7.0,totalMaterialUsedKg:82.67});approx(r.expectedUsageKg,82.665,0.1);});
 test('E5 Zero runner weight',()=>{const r=validateMaterialConsumption({actualTotalProduction:500,partWeightGrams:100,runnerWeightGrams:0,totalMaterialUsedKg:50.0});approx(r.expectedUsageKg,50.0,0.01);});
 test('E6 Zero prod expected=0',()=>{const r=validateMaterialConsumption({actualTotalProduction:0,partWeightGrams:42.5,runnerWeightGrams:7.0,totalMaterialUsedKg:5.0});eq(r.expectedUsageKg,0);nok(r.isAbnormal);});
-test('E7 BUG: 0 material no warning',()=>{const r=validateMaterialConsumption({actualTotalProduction:1000,partWeightGrams:42.5,runnerWeightGrams:7.0,totalMaterialUsedKg:0});nok(r.isAbnormal,'BUG confirmed: 0 material no warning');eq(r.warnings.length,0);});
+test('E7: 0 material when expected>0 flags abnormal',()=>{const r=validateMaterialConsumption({actualTotalProduction:1000,partWeightGrams:42.5,runnerWeightGrams:7.0,totalMaterialUsedKg:0});ok(r.isAbnormal);ok(r.warnings.length>0);});
 test('E8 1M pcs no crash',()=>{const r=validateMaterialConsumption({actualTotalProduction:1000000,partWeightGrams:10,runnerWeightGrams:2,totalMaterialUsedKg:12000});approx(r.expectedUsageKg,12000,1);});
 test('E9 Negative prod -> 0',()=>{const r=validateMaterialConsumption({actualTotalProduction:-100,partWeightGrams:42.5,runnerWeightGrams:7.0,totalMaterialUsedKg:5.0});eq(r.expectedUsageKg,0);});
 test('E10 Text in weight NaN->0',()=>{const r=validateMaterialConsumption({actualTotalProduction:1000,partWeightGrams:'abc',runnerWeightGrams:7.0,totalMaterialUsedKg:50.0});approx(r.expectedUsageKg,7,0.01);});
@@ -92,10 +106,10 @@ test('F1 25/800 = 3.13%',()=>approx(calcRejectionRate(25,800),3.13,0.01));
 test('F2 0 rej = 0%',()=>eq(calcRejectionRate(0,800),0));
 test('F3 800/900 eff = 88.89%',()=>approx(calcEfficiency(800,900),88.89,0.01));
 test('F4 100% efficiency',()=>eq(calcEfficiency(900,900),100.00));
-test('F5 BUG: over-prod eff>100 no cap',()=>{const e=calcEfficiency(1000,900);ok(e>100,'BUG: no cap on efficiency unlike OEE performance');});
+test('F5: over-prod eff clamped to 100%',()=>{const e=calcEfficiency(1000,900);eq(e,100.00);});
 test('F6 Zero target no divzero',()=>eq(calcEfficiency(800,0),0.00));
 test('F7 All rejected = 100%',()=>eq(calcRejectionRate(800,800),100.00));
-test('F8 BUG: rej>prod gives >100%',()=>{const r=calcRejectionRate(1000,800);ok(r>100,'BUG: no guard against rejection>production');});
+test('F8: rej>prod clamped to 100%',()=>{const r=calcRejectionRate(1000,800);eq(r,100.00);});
 
 console.log(`\n=== RESULTS: ${passed} PASS | ${failed} FAIL | Total: ${passed+failed} ===\n`);
 const out=join(__dir,'..','logs','unit_test_results.json');
