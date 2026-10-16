@@ -1946,6 +1946,24 @@ export function saveSupabaseConfig(urlOrConfig, anonKey) {
 }
 
 /**
+ * Clears saved Supabase credentials and resets app to offline-first local mode
+ */
+export function clearSupabaseConfig() {
+  const config = {
+    url: '',
+    anonKey: '',
+    isConnected: false,
+    lastTested: null,
+    latencyMs: null
+  };
+  try {
+    localStorage.removeItem(KEYS.SUPABASE_CONFIG);
+  } catch (e) {}
+  activeSupabaseClient = null;
+  return config;
+}
+
+/**
  * Pings Supabase endpoint to test connection validity and measure latency
  */
 export async function testSupabaseConnection(url, anonKey) {

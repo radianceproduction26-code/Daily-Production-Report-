@@ -521,7 +521,12 @@ export async function fetchMasterDataFromCloud() {
       .single();
 
     if (error || !data || !data.full_data) {
-      return { success: false, error: error?.message || 'No master data record in cloud' };
+      const isNotFound = error?.code === 'PGRST116' || error?.message?.includes('0 rows') || (!error && !data);
+      return {
+        success: false,
+        notFound: isNotFound,
+        error: error?.message || 'No master data record in cloud'
+      };
     }
 
     const payload = data.full_data;
@@ -560,7 +565,7 @@ export async function fetchMasterDataFromCloud() {
       updatedAt: payload.updatedAt
     };
   } catch (err) {
-    console.warn('Error fetching master data from cloud:', err);
-    return { success: false, error: err.message };
+    console.warn('Error fetching master data from cloud:', err?.message || err);
+    return { success: false, notFound: false, isNetworkError: true, error: err?.message || 'Network error' };
   }
 }
