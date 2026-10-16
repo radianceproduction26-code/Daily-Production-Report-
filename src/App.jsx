@@ -134,7 +134,7 @@ export default function App() {
         if (masterRes.mappings?.length > 0) setMappings(masterRes.mappings);
         if (masterRes.rejectionCodes?.length > 0) setRejectionCodes(masterRes.rejectionCodes);
         if (masterRes.downtimeCodes?.length > 0) setDowntimeCodes(masterRes.downtimeCodes);
-      } else {
+      } else if (masterRes && masterRes.notFound) {
         // If cloud does not have master data snapshot yet, push this device's parts to cloud
         const localParts = getParts();
         if (localParts && localParts.length > 0) {

@@ -31,19 +31,6 @@ export default defineConfig({
       workbox: {
         // Cache all static assets and the app shell
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-        // Network-first for API calls, cache-first for static assets
-        runtimeCaching: [
-          {
-            // Supabase API: network-first, fallback to cache
-            urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'supabase-api-cache',
-              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 }, // 24h
-              networkTimeoutSeconds: 10
-            }
-          }
-        ],
         // Increase asset cache limit for Excel library (can be large)
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024 // 5 MB
       }

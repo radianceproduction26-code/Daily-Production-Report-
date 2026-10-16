@@ -25,6 +25,7 @@ import {
   getSystemHealthMetrics,
   getSupabaseConfig,
   saveSupabaseConfig,
+  clearSupabaseConfig,
   testSupabaseConnection,
   flushSyncQueue,
   markBackupCompleted,
@@ -67,6 +68,18 @@ export default function SystemHealthDashboard() {
     const updated = saveSupabaseConfig(u, k);
     setConfig(updated);
     setConfigSaveNotice({ type: 'success', msg: 'Supabase configuration saved to secure local credentials.' });
+    setTimeout(() => setConfigSaveNotice(null), 4000);
+    refreshDashboard();
+  };
+
+  // Handle Clear / Disconnect Supabase Credentials
+  const handleClearConfig = () => {
+    const cleared = clearSupabaseConfig();
+    setConfig(cleared);
+    setEditUrl('');
+    setEditAnonKey('');
+    setConnTestResult(null);
+    setConfigSaveNotice({ type: 'success', msg: 'Supabase credentials cleared. System switched to 100% Local Offline-First Mode.' });
     setTimeout(() => setConfigSaveNotice(null), 4000);
     refreshDashboard();
   };
@@ -386,6 +399,23 @@ export default function SystemHealthDashboard() {
                 <RefreshCw size={16} className={isTestingConn ? 'animate-spin' : ''} />
                 <span>{isTestingConn ? 'Connecting...' : 'Test Connection'}</span>
               </button>
+
+              {(config.url || editUrl) && (
+                <button
+                  type="button"
+                  onClick={handleClearConfig}
+                  className="btn btn-outline"
+                  style={{
+                    width: '100%',
+                    borderColor: 'var(--clr-border)',
+                    color: 'var(--clr-text3)',
+                    marginTop: '4px'
+                  }}
+                >
+                  <CloudOff size={16} />
+                  <span>Clear Credentials (Use Offline Mode)</span>
+                </button>
+              )}
             </div>
 
             {/* Test Connection Output Alert */}
