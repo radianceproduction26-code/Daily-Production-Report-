@@ -76,12 +76,9 @@ export default function LoginScreen({ onLoginSuccess }) {
           <div style={{ display: 'inline-flex', justifyContent: 'center', marginBottom: '12px' }}>
             <Logo height={48} variant="white" />
           </div>
-          <h1 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '4px 0 2px 0', letterSpacing: '-0.02em', color: '#ffffff' }}>
+          <h1 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '4px 0 0 0', letterSpacing: '-0.02em', color: '#ffffff' }}>
             Digital Production Reporting
           </h1>
-          <p style={{ fontSize: '0.80rem', color: '#94a3b8', margin: 0 }}>
-            MC03 Pilot & Plant Floor Console
-          </p>
         </div>
 
         {/* Error Notification */}
