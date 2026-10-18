@@ -228,6 +228,15 @@ export default function HourEntryModal({
   const [remarks,    setRemarks]    = useState(existingEntry?.remarks || '');
   const [editReason, setEditReason] = useState('');
 
+  // Lumps Generated (kg) during this production hour
+  const [lumpsKg, setLumpsKg] = useState(() => {
+    if (existingEntry && (existingEntry.lumpsKg !== undefined || existingEntry.lumpsGeneratedKg !== undefined)) {
+      const val = existingEntry.lumpsKg !== undefined ? existingEntry.lumpsKg : existingEntry.lumpsGeneratedKg;
+      return val !== null && val !== '' ? String(val) : '';
+    }
+    return '';
+  });
+
   // ─── EARLY RETURN: must come AFTER all hooks ───
   // Returning null here is safe because all hooks above have already been called unconditionally.
   if (!isOpen || !activeSession) return null;
@@ -394,6 +403,8 @@ export default function HourEntryModal({
       primaryDowntimeCode:  primaryDt,
       primaryRejectionCode: primaryRej,
       remarks:              remarks.trim(),
+      lumpsKg:              Number(lumpsKg) > 0 ? Number(parseFloat(lumpsKg).toFixed(2)) : 0,
+      lumpsGeneratedKg:     Number(lumpsKg) > 0 ? Number(parseFloat(lumpsKg).toFixed(2)) : 0,
       rejectionBreakdown:   activeRejections,
       downtimeBreakdown:    activeDowntimes
     }, existingEntry, editReason, currentSession?.id);
@@ -736,20 +747,43 @@ export default function HourEntryModal({
             </div>
           </div>
 
-          {/* ── Gross Production ── */}
-          <div>
-            <div style={S.label}>Gross Production *</div>
-            <input
-              type="number"
-              inputMode="numeric"
-              style={S.input({ fontSize: '1.15rem', fontWeight: 800 })}
-              value={productionQty}
-              onChange={e => setProductionQty(e.target.value.replace(/\D/g, ''))}
-              placeholder="Enter pieces produced"
-              autoFocus
-            />
-            <div style={S.hint()}>
-              Max possible: {validationResult.maxAllowed} pcs · Equiv runtime: {validationResult.productionMinutes} min
+          {/* ── Gross Production & Lumps Generated ── */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '10px' }}>
+            <div>
+              <div style={S.label}>Gross Production *</div>
+              <input
+                type="number"
+                inputMode="numeric"
+                style={S.input({ fontSize: '1.15rem', fontWeight: 800 })}
+                value={productionQty}
+                onChange={e => setProductionQty(e.target.value.replace(/\D/g, ''))}
+                placeholder="Pieces produced"
+                autoFocus
+              />
+              <div style={S.hint()}>
+                Max: {validationResult.maxAllowed} pcs · {validationResult.productionMinutes}m run
+              </div>
+            </div>
+
+            <div>
+              <div style={S.label}>Lumps (kg)</div>
+              <input
+                type="number"
+                step="0.05"
+                min="0"
+                style={S.input({
+                  fontSize: '1.05rem',
+                  fontWeight: 700,
+                  borderColor: Number(lumpsKg) > 0 ? 'var(--amber-primary)' : undefined,
+                  background: Number(lumpsKg) > 0 ? 'rgba(245, 158, 11, 0.05)' : undefined
+                })}
+                value={lumpsKg}
+                onChange={e => setLumpsKg(e.target.value)}
+                placeholder="0.0 kg"
+              />
+              <div style={S.hint()}>
+                Purge / lumps scrap (kg)
+              </div>
             </div>
           </div>
 

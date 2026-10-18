@@ -72,8 +72,14 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      }
+    },
     watch: {
-      ignored: ['**/scratch/**', '**/android/**', '**/dist/**']
+      ignored: ['**/scratch/**', '**/android/**', '**/dist/**', '**/backend/**']
     }
   }
 });

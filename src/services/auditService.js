@@ -1,6 +1,8 @@
 // Radiance Polymers - Audit Trail Service
 // Tracks and stores all modifications, reasons, and user actions immutably
 
+import { recordAuditLogToLiveDatabase } from './liveBackendService.js';
+
 const AUDIT_STORAGE_KEY = 'radiance_audit_logs_v1';
 
 export function getAuditLogs() {
@@ -46,6 +48,7 @@ export function recordAuditLog({
     // Retain up to 2000 log records locally
     const trimmed = logs.slice(0, 2000);
     localStorage.setItem(AUDIT_STORAGE_KEY, JSON.stringify(trimmed));
+    recordAuditLogToLiveDatabase(entry);
     return entry;
   } catch (err) {
     console.error('Failed to write audit log:', err);

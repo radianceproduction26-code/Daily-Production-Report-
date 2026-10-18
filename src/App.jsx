@@ -9,10 +9,15 @@ import MaterialModal from './components/MaterialModal';
 import CounterModal from './components/CounterModal';
 import ShiftSummaryDrawer from './components/ShiftSummaryDrawer';
 import ShiftSetupModal from './components/ShiftSetupModal';
-import SetupWizardModal from './components/SetupWizardModal';
 import MockShiftValidationModal from './components/MockShiftValidationModal';
 import TrialBanner from './components/TrialBanner';
-import PasswordAuthModal from './components/PasswordAuthModal';
+import LoginScreen from './components/LoginScreen';
+import {
+  getActiveSession,
+  getCurrentUserProfile,
+  logout,
+  onAuthStateChange
+} from './services/authService';
 
 // Bug #3: Lazy-loaded heavy views — only fetched when the user navigates to that tab
 const DashboardView        = lazy(() => import('./components/DashboardView'));
@@ -36,6 +41,13 @@ import {
   SESSION_CLIENT_ID
 } from './services/cloudSyncService';
 import { I18nProvider } from './i18n/I18nContext';
+import {
+  fetchShiftReportsFromLiveDatabase,
+  fetchMetadataFromLiveDatabase,
+  saveShiftReportToLiveDatabase,
+  deleteShiftReportFromLiveDatabase,
+  savePartsToLiveDatabase
+} from './services/liveBackendService';
 
 import {
   initializeStorage,
@@ -71,19 +83,79 @@ import { USERS, SHIFT_HOURS_DEFINITIONS } from './data/seedData';
 import { recordAuditLog } from './services/auditService';
 
 export default function App() {
-  // 1. Initialize local storage & check first-time setup
+  // 1. Initialize local storage & Supabase auth session
+  const [session, setSession] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+
   useEffect(() => {
     initializeStorage();
-    const isSetupCompleted = localStorage.getItem('first_time_setup_completed') === 'true';
-    const storedMachines = getMachines();
-    const storedParts = getParts();
-    if (!isSetupCompleted && (!storedMachines || storedMachines.length === 0 || !storedParts || storedParts.length === 0)) {
-      setIsSetupWizardOpen(true);
+    let isMounted = true;
+
+    async function checkSession() {
+      try {
+        const sessionRes = await getActiveSession();
+        if (sessionRes.success && sessionRes.session) {
+          const profileRes = await getCurrentUserProfile(sessionRes.session.user.id);
+          if (isMounted) {
+            if (profileRes.success && profileRes.data && profileRes.data.is_active !== false) {
+              setSession(sessionRes.session);
+              const p = profileRes.data;
+              setCurrentUser({
+                id: p.id,
+                fullName: p.full_name,
+                name: p.full_name,
+                employeeCode: p.employee_code,
+                badgeId: p.employee_code,
+                role: p.role || 'operator',
+                is_active: p.is_active
+              });
+            } else {
+              await logout();
+              setSession(null);
+              setCurrentUser(null);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Auth check notice:', err);
+      } finally {
+        if (isMounted) setIsAuthChecking(false);
+      }
     }
+
+    checkSession();
+
+    const { unsubscribe } = onAuthStateChange(async (event, newSession) => {
+      if (event === 'SIGNED_IN' && newSession) {
+        const profileRes = await getCurrentUserProfile(newSession.user.id);
+        if (profileRes.success && profileRes.data) {
+          const p = profileRes.data;
+          setSession(newSession);
+          setCurrentUser({
+            id: p.id,
+            fullName: p.full_name,
+            name: p.full_name,
+            employeeCode: p.employee_code,
+            badgeId: p.employee_code,
+            role: p.role || 'operator',
+            is_active: p.is_active
+          });
+        }
+      } else if (event === 'SIGNED_OUT') {
+        setSession(null);
+        setCurrentUser(null);
+        setActiveTab('console');
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
   }, []);
 
   // 2. Application Core State
-  const [currentUser, setCurrentUser] = useState(USERS[0]); // Default: Operator Rajesh Kumar
   const [activeTab, setActiveTab] = useState('console'); // 'console', 'analytics', 'reports', 'admin', 'audit'
 
   // Master Data State
@@ -116,10 +188,37 @@ export default function App() {
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [lastCloudSyncTime, setLastCloudSyncTime] = useState(null);
 
-  // Cloud Sync: Fetch on startup & setup Realtime subscription
+  // Live & Cloud Sync: Fetch on startup & setup Realtime subscription
   const handleRefreshCloud = async () => {
     setIsCloudSyncing(true);
     try {
+      // 0. Fetch latest from Live Online Database Server
+      try {
+        const liveRes = await fetchShiftReportsFromLiveDatabase();
+        if (liveRes && liveRes.success && liveRes.reports && liveRes.reports.length > 0) {
+          saveShiftReports(liveRes.reports);
+          setReports(liveRes.reports);
+        }
+        const liveMeta = await fetchMetadataFromLiveDatabase();
+        if (liveMeta) {
+          if (liveMeta.parts?.length > 0) { saveParts(liveMeta.parts, false); setParts(liveMeta.parts); }
+          if (liveMeta.machines?.length > 0) {
+            const normMachines = liveMeta.machines.map(m => ({
+              ...m,
+              machineNumber: m.machineNumber || m.machine_number || m.machineCode || m.id?.replace(/^m-mc-?/, 'MC'),
+              machineName: m.machineName || m.machine_name
+            }));
+            saveMachines(normMachines, false);
+            setMachines(normMachines);
+          }
+          if (liveMeta.mappings?.length > 0) { saveMachinePartMappings(liveMeta.mappings, false); setMappings(liveMeta.mappings); }
+          if (liveMeta.rejectionCodes?.length > 0) { saveRejectionCodes(liveMeta.rejectionCodes, false); setRejectionCodes(liveMeta.rejectionCodes); }
+          if (liveMeta.downtimeCodes?.length > 0) { saveDowntimeCodes(liveMeta.downtimeCodes, false); setDowntimeCodes(liveMeta.downtimeCodes); }
+        }
+      } catch (liveErr) {
+        console.warn('Live database pull notice:', liveErr);
+      }
+
       // 1. Fetch shift reports from cloud
       const res = await fetchShiftReportsFromCloud();
       if (res && res.success && res.reports) {
@@ -239,49 +338,38 @@ export default function App() {
   const [isCounterModalOpen, setIsCounterModalOpen] = useState(false);
   const [isSummaryDrawerOpen, setIsSummaryDrawerOpen] = useState(false);
   const [isNewShiftModalOpen, setIsNewShiftModalOpen] = useState(false);
-  const [isSetupWizardOpen, setIsSetupWizardOpen] = useState(false);
   const [isMockValidationOpen, setIsMockValidationOpen] = useState(false);
 
-  // Supervisor PIN Protection (configurable via VITE_SUPERVISOR_PIN env variable) for non-Shifts tabs
-  const [isSupervisorUnlocked, setIsSupervisorUnlocked] = useState(() => {
-    try {
-      return sessionStorage.getItem('rp_supervisor_unlocked') === 'true';
-    } catch (e) {
-      return false;
-    }
-  });
-  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
-  const [pendingTab, setPendingTab] = useState(null);
-
-  // Tabs that require supervisor unlock
-  const PROTECTED_TABS = ['part-master', 'settings', 'admin', 'upload-center', 'audit', 'health', 'trial'];
-
+  // Role-based navigation guards (Operator: Shifts only; Supervisor: Shifts, Master Sheet, Dashboard, Part Master; Admin: All)
   const handleTabChange = (targetTab) => {
-    if (PROTECTED_TABS.includes(targetTab) && !isSupervisorUnlocked) {
-      setPendingTab(targetTab);
-      setPasswordModalOpen(true);
-      return;
+    const role = (currentUser?.role || 'operator').toLowerCase();
+    if (role === 'operator' && targetTab !== 'console') {
+      return; // Operators are strictly restricted to the Shifts console
+    }
+    if (role === 'supervisor' && targetTab === 'settings') {
+      return; // Supervisors cannot access settings
     }
     setActiveTab(targetTab);
   };
 
-  const handleUnlockSupervisor = () => {
-    try {
-      sessionStorage.setItem('rp_supervisor_unlocked', 'true');
-    } catch (e) {}
-    setIsSupervisorUnlocked(true);
-    setPasswordModalOpen(false);
-    if (pendingTab) {
-      setActiveTab(pendingTab);
-      setPendingTab(null);
-    }
+  const handleLoginSuccess = (authUserData, profile) => {
+    setSession({ user: authUserData });
+    setCurrentUser({
+      id: profile.id,
+      fullName: profile.full_name,
+      name: profile.full_name,
+      employeeCode: profile.employee_code,
+      badgeId: profile.employee_code,
+      role: profile.role || 'operator',
+      is_active: profile.is_active
+    });
+    setActiveTab('console');
   };
 
-  const handleLockSupervisor = () => {
-    try {
-      sessionStorage.removeItem('rp_supervisor_unlocked');
-    } catch (e) {}
-    setIsSupervisorUnlocked(false);
+  const handleLogout = async () => {
+    await logout();
+    setSession(null);
+    setCurrentUser(null);
     setActiveTab('console');
   };
 
@@ -304,16 +392,21 @@ export default function App() {
     if (res.success) {
       const freshReports = getShiftReports();
       setReports(freshReports);
+      deleteShiftReportFromLiveDatabase(reportId).catch(() => {});
       await deleteShiftReportFromCloud(reportId);
     } else {
       alert('Could not delete report: ' + (res.error || 'Unknown error'));
     }
   };
 
-  // Sync state helper: saves locally and pushes to Supabase Cloud + Webhook
+  // Sync state helper: saves locally and pushes to Live Online Database + Supabase Cloud + Webhook
   const syncReportUpdates = (updatedReport) => {
     saveActiveReport(updatedReport);
     setReports(getShiftReports());
+    // Push immediately to Live Online Database Server
+    saveShiftReportToLiveDatabase(updatedReport).catch(err => {
+      console.warn('Live database push notice:', err);
+    });
     // Auto-push to Supabase cloud and Google Sheet webhook
     pushShiftReportToCloud(updatedReport).catch(err => {
       console.warn('Background cloud sync push notice:', err);
@@ -348,9 +441,14 @@ export default function App() {
       return session;
     });
 
+    const totalHourlyLumps = updatedSessions.reduce((sum, sess) => {
+      return sum + (sess.entries || []).reduce((sSum, e) => sSum + (Number(e.lumpsKg) || Number(e.lumpsGeneratedKg) || 0), 0);
+    }, 0);
+
     const updatedReport = {
       ...activeReport,
-      mouldSessions: updatedSessions
+      mouldSessions: updatedSessions,
+      lumpsGeneratedKg: totalHourlyLumps > 0 ? Number(totalHourlyLumps.toFixed(2)) : (activeReport.lumpsGeneratedKg || 0)
     };
 
     // Log to Audit Trail
@@ -682,6 +780,21 @@ export default function App() {
     }));
   };
 
+  if (isAuthChecking) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: '#fff' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ width: '40px', height: '40px', border: '3px solid #334155', borderTopColor: '#3b82f6', borderRadius: '50%', margin: '0 auto 16px auto', animation: 'spin 1s linear infinite' }} />
+          <div style={{ fontSize: '0.9rem', color: '#94a3b8', fontWeight: 600 }}>Connecting to Radiance Polymers System...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session || !currentUser) {
+    return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
+  }
+
   return (
     <I18nProvider currentUser={currentUser} onUpdateUserProfileLanguage={handleUpdateUserLanguage}>
       <div className="app-container">
@@ -690,13 +803,7 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={handleTabChange}
         currentUser={currentUser}
-        onSwitchUser={(user) => setCurrentUser(user)}
-        usersList={USERS}
-        activeReport={activeReport}
-        onOpenNewShiftModal={handleOpenNewShiftModal}
-        onOpenSetupWizard={() => setIsSetupWizardOpen(true)}
-        isSupervisorUnlocked={isSupervisorUnlocked}
-        onLockSupervisor={handleLockSupervisor}
+        onLogout={handleLogout}
       />
 
 
@@ -918,26 +1025,6 @@ export default function App() {
         />
       )}
 
-      {/* Data Initialization Setup Wizard */}
-      {isSetupWizardOpen && (
-        <SetupWizardModal
-          isOpen={isSetupWizardOpen}
-          onClose={() => setIsSetupWizardOpen(false)}
-          machines={machines}
-          onUpdateMachines={handleUpdateMachines}
-          parts={parts}
-          onUpdateParts={handleUpdateParts}
-          mappings={mappings}
-          onUpdateMappings={handleUpdateMappings}
-          rejectionCodes={rejectionCodes}
-          onUpdateRejectionCodes={handleUpdateRejectionCodes}
-          downtimeCodes={downtimeCodes}
-          onUpdateDowntimeCodes={handleUpdateDowntimeCodes}
-          usersList={USERS}
-          onCompleteWizard={() => setActiveTab('console')}
-        />
-      )}
-
       {/* Mock Shift Validation Guided Workflow */}
       {isMockValidationOpen && (
         <MockShiftValidationModal
@@ -945,23 +1032,6 @@ export default function App() {
           onClose={() => setIsMockValidationOpen(false)}
         />
       )}
-
-      {/* Supervisor PIN Protection Modal ('2026') */}
-      <PasswordAuthModal
-        isOpen={passwordModalOpen}
-        onClose={() => {
-          setPasswordModalOpen(false);
-          setPendingTab(null);
-        }}
-        onSuccess={handleUnlockSupervisor}
-        targetTabName={
-          pendingTab === 'mastersheet' ? 'Master Sheet' :
-          pendingTab === 'dashboard' ? 'Dashboard' :
-          pendingTab === 'part-master' ? 'Part Master' :
-          pendingTab === 'settings' ? 'Settings' :
-          pendingTab || 'this section'
-        }
-      />
     </div>
     </I18nProvider>
   );

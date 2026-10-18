@@ -830,7 +830,7 @@ export function checkPilotReadiness({ machines = [], parts = [], mappings = [], 
   }
 
   // Fleet check: at least one active machine from MC03, MC04, MC05, MC06
-  const hasFleetMachine = machines.some(m => ['MC03', 'MC04', 'MC05', 'MC06'].includes((m.machineNumber || m.machineCode || '').toUpperCase()));
+  const hasFleetMachine = machines.some(m => ['MC03', 'MC04', 'MC05', 'MC06'].includes((m.machineNumber || m.machineCode || m.machine_number || m.id?.replace(/^m-mc-?/, 'MC') || '').toUpperCase()));
   if (!hasFleetMachine) {
     missing.push('Production Machines (MC03, MC04, MC05, MC06)');
   }

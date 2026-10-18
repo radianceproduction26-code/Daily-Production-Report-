@@ -1,16 +1,18 @@
-// Radiance Polymers - Clean Mobile Header
+// ==============================================================================
+// RADIANCE POLYMERS - RESPONSIVE SHOP-FLOOR HEADER
+// Role-aware navigation (Operator, Supervisor, Admin) with Supabase session controls
+// ==============================================================================
 import React from 'react';
 import {
   Factory,
   FileSpreadsheet,
   Settings,
   Layers,
-  Plus,
   Globe,
   BarChart3,
   User,
-  Lock,
-  Unlock
+  LogOut,
+  Shield
 } from 'lucide-react';
 import { useI18n } from '../i18n/I18nContext';
 import Logo from './Logo';
@@ -19,35 +21,40 @@ export default function Header({
   activeTab,
   setActiveTab,
   currentUser,
-  onSwitchUser,
-  usersList = [],
-  activeReport,
-  onOpenNewShiftModal,
-  onOpenSetupWizard,
-  isSupervisorUnlocked = false,
-  onLockSupervisor
+  onLogout
 }) {
   const { toggleLanguage } = useI18n();
 
-  const navItems = [
-    { id: 'console', icon: Factory, label: 'Shifts' },
-    { id: 'mastersheet', icon: FileSpreadsheet, label: 'Master Sheet' },
-    { id: 'dashboard', icon: BarChart3, label: 'Dashboard' },
-    { id: 'part-master', icon: Layers, label: 'Part Master' },
-    { id: 'settings', icon: Settings, label: 'Settings' }
+  const role = (currentUser?.role || 'operator').toLowerCase();
+
+  // Role-gated navigation items
+  const allNavItems = [
+    { id: 'console', icon: Factory, label: 'Shifts', minRole: 'operator' },
+    { id: 'mastersheet', icon: FileSpreadsheet, label: 'Master Sheet', minRole: 'supervisor' },
+    { id: 'dashboard', icon: BarChart3, label: 'Dashboard', minRole: 'supervisor' },
+    { id: 'part-master', icon: Layers, label: 'Part Master', minRole: 'supervisor' },
+    { id: 'settings', icon: Settings, label: 'Settings', minRole: 'admin' }
   ];
+
+  const navItems = allNavItems.filter(item => {
+    if (role === 'admin') return true;
+    if (role === 'supervisor') return item.minRole !== 'admin';
+    return item.minRole === 'operator';
+  });
+
+  const userName = currentUser?.fullName || currentUser?.full_name || currentUser?.name || 'Staff Member';
+  const displayRole = (currentUser?.role || 'operator').toUpperCase();
 
   return (
     <>
       {/* ── TOP APP BAR ── */}
       <header className="app-header">
-
-        {/* Company Name / Logo (prominently sized) */}
+        {/* Company Name / Logo */}
         <div className="brand-section">
           <Logo height={44} variant="default" style={{ height: '44px', maxHeight: '48px' }} />
         </div>
 
-        {/* Navigation pills — Always visible across desktop, tablet, and mobile */}
+        {/* Navigation pills — Responsive for current role */}
         <div className="nav-pills">
           {navItems.map(item => (
             <button
@@ -62,32 +69,8 @@ export default function Header({
           ))}
         </div>
 
-        {/* Top bar right: Language toggle + Supervisor button */}
-        <div className="topbar-actions">
-
-          {/* If Supervisor is unlocked, show Lock button */}
-          {isSupervisorUnlocked && onLockSupervisor && (
-            <button
-              type="button"
-              className="btn btn-outline"
-              onClick={onLockSupervisor}
-              title="Supervisor mode active"
-              style={{
-                height: '34px',
-                padding: '0 10px',
-                gap: '4px',
-                borderColor: 'var(--clr-error)',
-                color: 'var(--clr-error)',
-                fontSize: '0.74rem',
-                fontWeight: 700,
-                borderRadius: 'var(--r-full)'
-              }}
-            >
-              <Lock size={13} />
-              <span>Lock</span>
-            </button>
-          )}
-
+        {/* Top bar right: Language + Profile Badge + Logout */}
+        <div className="topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {/* Language toggle */}
           <button
             type="button"
@@ -99,59 +82,78 @@ export default function Header({
             <Globe size={15} />
           </button>
 
-          {/* Supervisor button with Male Person Icon */}
+          {/* User profile info badge */}
           <div
             className="role-pill-selector"
-            title="Active Supervisor"
+            title={`Logged in as ${userName} (${displayRole})`}
             style={{
               height: '34px',
-              padding: '0 8px 0 10px',
+              padding: '0 10px',
               gap: '6px',
               fontSize: '0.78rem',
               display: 'flex',
               alignItems: 'center',
-              background: 'var(--clr-primary-lt)',
-              border: '1px solid #93c5fd',
+              background: role === 'admin' ? '#fef3c7' : 'var(--clr-primary-lt)',
+              border: `1px solid ${role === 'admin' ? '#f59e0b' : '#93c5fd'}`,
               borderRadius: 'var(--r-full)'
             }}
           >
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="var(--clr-primary)"
-              strokeWidth="2.3"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              style={{ flexShrink: 0, display: 'block' }}
-              aria-label="Male Supervisor Icon"
-            >
-              <circle cx="12" cy="7" r="4" />
-              <path d="M5.5 21v-2a6.5 6.5 0 0 1 13 0v2" />
-            </svg>
-            <select
-              className="role-select-native"
-              value={currentUser?.id}
-              onChange={(e) => {
-                const selected = usersList.find(u => u.id === e.target.value);
-                if (selected) onSwitchUser(selected);
-              }}
+            {role === 'admin' ? (
+              <Shield size={14} color="#d97706" />
+            ) : (
+              <User size={14} color="var(--clr-primary)" />
+            )}
+            <span
               style={{
                 fontSize: '0.78rem',
                 fontWeight: 700,
-                color: 'var(--clr-primary)',
-                maxWidth: '96px',
-                cursor: 'pointer'
+                color: role === 'admin' ? '#92400e' : 'var(--clr-primary)',
+                maxWidth: '120px',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis'
               }}
             >
-              {usersList.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.fullName}
-                </option>
-              ))}
-            </select>
+              {userName}
+            </span>
+            <span
+              style={{
+                fontSize: '0.62rem',
+                fontWeight: 800,
+                padding: '1px 5px',
+                borderRadius: '4px',
+                background: role === 'admin' ? '#f59e0b' : '#2563eb',
+                color: '#ffffff'
+              }}
+            >
+              {displayRole}
+            </span>
           </div>
+
+          {/* Sign Out Button */}
+          {onLogout && (
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={onLogout}
+              title="Sign Out of Console"
+              style={{
+                height: '34px',
+                padding: '0 10px',
+                gap: '5px',
+                borderColor: '#cbd5e1',
+                color: '#64748b',
+                fontSize: '0.74rem',
+                fontWeight: 700,
+                borderRadius: 'var(--r-full)',
+                display: 'flex',
+                alignItems: 'center'
+              }}
+            >
+              <LogOut size={13} />
+              <span>Logout</span>
+            </button>
+          )}
         </div>
       </header>
 
