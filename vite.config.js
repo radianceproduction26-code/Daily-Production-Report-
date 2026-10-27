@@ -31,8 +31,18 @@ export default defineConfig({
       workbox: {
         // Cache all static assets and the app shell
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+        // Bump cache version so any old browser caches are dropped
+        cacheId: 'radiance-pwa-v2.0.0',
+        cleanupOutdatedCaches: true,
         // Increase asset cache limit for Excel library (can be large)
-        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024 // 5 MB
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MB
+        // CRITICAL: Never cache Supabase auth or API calls
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
+            handler: 'NetworkOnly'
+          }
+        ]
       }
     })
   ],

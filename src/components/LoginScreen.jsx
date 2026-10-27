@@ -38,7 +38,8 @@ export default function LoginScreen({ onLoginSuccess }) {
         setErrorMessage(res.error || 'Authentication failed. Please verify credentials.');
       }
     } catch (err) {
-      setErrorMessage('Unable to reach server. Please check your network connection.');
+      console.error('[LoginScreen] Unexpected submission error:', err);
+      setErrorMessage(err?.message || 'Authentication error. Please try again.');
     } finally {
       setIsLoading(false);
     }

@@ -95,10 +95,10 @@ export default function App() {
     async function checkSession() {
       try {
         const sessionRes = await getActiveSession();
-        if (sessionRes.success && sessionRes.session) {
+        if (sessionRes?.success && sessionRes?.session) {
           const profileRes = await getCurrentUserProfile(sessionRes.session.user.id);
           if (isMounted) {
-            if (profileRes.success && profileRes.data && profileRes.data.is_active !== false) {
+            if (profileRes?.success && profileRes?.data && profileRes.data.is_active !== false) {
               setSession(sessionRes.session);
               const p = profileRes.data;
               setCurrentUser({
@@ -903,7 +903,6 @@ export default function App() {
               reports={reports}
               settings={settings}
               onUpdateSettings={handleUpdateSettings}
-              onOpenSetupWizard={() => setIsSetupWizardOpen(true)}
               onOpenMockValidation={() => setIsMockValidationOpen(true)}
               currentUser={currentUser}
               rejectionCodes={rejectionCodes}
@@ -927,7 +926,6 @@ export default function App() {
               usersList={USERS}
               reports={reports}
               systemSettings={settings}
-              onOpenSetupWizard={() => setIsSetupWizardOpen(true)}
               onOpenMockValidation={() => setIsMockValidationOpen(true)}
               onUpdateSettings={handleUpdateSettings}
             />

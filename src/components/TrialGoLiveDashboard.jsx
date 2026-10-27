@@ -91,7 +91,6 @@ export default function TrialGoLiveDashboard({
   usersList = [],
   reports = [],
   systemSettings = {},
-  onOpenSetupWizard,
   onOpenMockValidation,
   onUpdateSettings
 }) {

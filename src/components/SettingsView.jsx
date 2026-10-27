@@ -33,7 +33,6 @@ export default function SettingsView({
   reports = [],
   settings = {},
   onUpdateSettings,
-  onOpenSetupWizard,
   onOpenMockValidation,
   currentUser,
   rejectionCodes = [],
@@ -81,17 +80,6 @@ export default function SettingsView({
           </div>
 
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', width: '100%' }}>
-            {onOpenSetupWizard && (
-              <button
-                type="button"
-                className="btn btn-outline btn-sm"
-                onClick={onOpenSetupWizard}
-                style={{ flex: 1, minHeight: '44px' }}
-              >
-                <Sparkles size={15} color="var(--clr-primary)" />
-                <span>Setup Wizard</span>
-              </button>
-            )}
 
             <button
               type="button"
@@ -318,7 +306,6 @@ export default function SettingsView({
                 usersList={usersList}
                 reports={reports}
                 systemSettings={settings}
-                onOpenSetupWizard={onOpenSetupWizard}
                 onOpenMockValidation={onOpenMockValidation}
                 onUpdateSettings={onUpdateSettings}
               />
