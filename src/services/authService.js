@@ -19,11 +19,12 @@ export function isNetworkError(error) {
   return (
     status === 0 ||
     name === 'typeerror' ||
+    name === 'aborterror' ||
     msg.includes('failed to fetch') ||
     msg.includes('networkerror') ||
-    msg.includes('network') ||
     msg.includes('load failed') ||
-    msg.includes('connection error')
+    msg.includes('connection error') ||
+    msg.includes('timeout')
   );
 }
 
@@ -42,11 +43,14 @@ export async function resolveEmailFromIdentifier(identifier) {
     return { email: clean.toLowerCase(), error: null };
   }
 
-  // Pre-mapped standard plant codes
+  // Pre-mapped standard plant codes (aligned with live auth.users & public.profiles)
   const KNOWN_CODES = {
-    'adm-001': 'admin@radiance.com',
-    'sup-01': 'lokesh@radiance.com',
-    'sup-02': 'akshay@radiance.com',
+    'adm-001': 'adm-001@radiance.local',
+    'adm-corp': 'admin@radiance.com',
+    'sup-01': 'sup-01@radiance.local',
+    'sup-02': 'sup-02@radiance.local',
+    'sup-lokesh': 'lokesh@radiance.com',
+    'sup-akshay': 'akshay@radiance.com',
     'emp-101': 'emp-101@radiance.local',
     'emp-102': 'emp-102@radiance.local',
     'emp-103': 'emp-103@radiance.local',
@@ -69,43 +73,60 @@ export async function resolveEmailFromIdentifier(identifier) {
   }
 
   try {
-    const { data, error } = await supabase.rpc('get_email_by_employee_code', {
-      p_employee_code: clean
+    // 1. Primary secure resolver: resolve_login_email
+    let { data, error } = await supabase.rpc('resolve_login_email', {
+      p_code: clean
     });
 
+    // 2. Legacy alias fallback if resolve_login_email is not found
+    if (error && (error.code === 'PGRST202' || error.message?.includes('function') || error.message?.includes('not found'))) {
+      const res = await supabase.rpc('get_email_by_employee_code', {
+        p_employee_code: clean
+      });
+      data = res.data;
+      error = res.error;
+    }
+
     if (error) {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        return { email: null, error: 'You appear to be offline.' };
+      }
       if (isNetworkError(error)) {
         return { email: null, error: 'Network connection lost. Please check Wi-Fi or mobile data.' };
       }
-      console.warn('[authService] get_email_by_employee_code RPC notice:', error);
-
-      // If RPC is missing, fallback to standard local domain pattern
-      if (error.code === 'PGRST202' || error.message?.includes('function') || error.message?.includes('not found')) {
-        return { email: `${lowerCode}@radiance.local`, error: null };
-      }
-      return { email: null, error: 'Wrong employee code/email or password.' };
+      console.error('[authService] ERR_CODE_LOOKUP:', error.code || 'UNKNOWN');
+      return { email: null, error: 'Employee code or password is incorrect.' };
     }
 
     if (!data) {
-      return { email: null, error: 'Wrong employee code/email or password.' };
+      return { email: null, error: 'Employee code or password is incorrect.' };
     }
 
     return { email: String(data).toLowerCase(), error: null };
   } catch (err) {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return { email: null, error: 'You appear to be offline.' };
+    }
     if (isNetworkError(err)) {
       return { email: null, error: 'Network connection lost. Please check Wi-Fi or mobile data.' };
     }
-    console.error('[authService] Unexpected error during code lookup:', err);
-    return { email: null, error: 'Wrong employee code/email or password.' };
+    console.error('[authService] ERR_LOOKUP_EXCEPTION:', err.name || 'UNKNOWN');
+    return { email: null, error: 'Employee code or password is incorrect.' };
   }
 }
 
 const SEED_USERS_LOCAL = [
   {
-    identifiers: ['adm-001', 'admin@radiance.com', 'adm-corp'],
+    identifiers: ['adm-001', 'adm-001@radiance.local'],
+    password: 'Admin@123',
+    user: { id: 'fd8fb2ed-7784-4fe2-a16a-f047864f48e5', email: 'adm-001@radiance.local', aud: 'authenticated' },
+    profile: { id: 'fd8fb2ed-7784-4fe2-a16a-f047864f48e5', full_name: 'Plant Admin', employee_code: 'ADM-001', role: 'admin', is_active: true }
+  },
+  {
+    identifiers: ['adm-corp', 'admin@radiance.com'],
     password: 'Admin@123',
     user: { id: '15ca9616-ad4a-43c6-936c-2715ebe799b2', email: 'admin@radiance.com', aud: 'authenticated' },
-    profile: { id: '15ca9616-ad4a-43c6-936c-2715ebe799b2', full_name: 'Plant Admin', employee_code: 'ADM-001', role: 'admin', is_active: true }
+    profile: { id: '15ca9616-ad4a-43c6-936c-2715ebe799b2', full_name: 'Plant Admin (Email)', employee_code: 'ADM-CORP', role: 'admin', is_active: true }
   },
   {
     identifiers: ['sup-01', 'lokesh@radiance.com', 'sup-01@radiance.local'],
@@ -193,6 +214,13 @@ export async function login({ emailOrCode, password }) {
     return { success: false, error: 'Please enter both your Employee Code/Email and password.' };
   }
 
+  // 1. Device is completely offline
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    const local = tryLocalOfflineAuth(cleanIdent, cleanPass);
+    if (local) return local;
+    return { success: false, error: 'You appear to be offline.' };
+  }
+
   if (!isSupabaseConfigured || !supabase) {
     const local = tryLocalOfflineAuth(cleanIdent, cleanPass);
     if (local) return local;
@@ -202,7 +230,7 @@ export async function login({ emailOrCode, password }) {
     };
   }
 
-  // 1. Resolve Identifier to registered Auth Email
+  // 2. Resolve Identifier to registered Auth Email
   const resolveResult = await resolveEmailFromIdentifier(cleanIdent);
   if (resolveResult.error) {
     const local = tryLocalOfflineAuth(cleanIdent, cleanPass);
@@ -212,65 +240,100 @@ export async function login({ emailOrCode, password }) {
 
   const email = resolveResult.email;
 
-  // 2. Perform Supabase Auth Sign In
-  try {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password: cleanPass
-    });
+  // 3. Perform Supabase Auth Sign In with 1 retry on network timeout
+  let authResponse = null;
+  let attempts = 0;
+  const maxAttempts = 2;
 
-    if (error) {
-      // Real network failure -> try offline local authentication
-      if (isNetworkError(error)) {
-        const local = tryLocalOfflineAuth(cleanIdent, cleanPass);
-        if (local) return local;
-        return { success: false, error: 'Network connection lost. Please check Wi-Fi or mobile data.' };
+  while (attempts < maxAttempts) {
+    attempts++;
+    try {
+      // 12-second abort timeout per attempt
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Connection timed out')), 12000);
+      });
+
+      const signInPromise = supabase.auth.signInWithPassword({
+        email,
+        password: cleanPass
+      });
+
+      authResponse = await Promise.race([signInPromise, timeoutPromise]);
+      break; // Completed
+    } catch (fetchErr) {
+      if (attempts < maxAttempts && isNetworkError(fetchErr)) {
+        await new Promise(r => setTimeout(r, 1000));
+        continue;
       }
+      authResponse = { data: null, error: fetchErr };
+      break;
+    }
+  }
 
-      const msg = (error.message || '').toLowerCase();
-      const code = (error.code || '').toLowerCase();
-      const status = error.status || error.statusCode;
+  const { data, error } = authResponse || {};
 
-      // Invalid credentials
-      if (
-        code === 'invalid_credentials' ||
-        (status === 400 && msg.includes('invalid login credentials')) ||
-        msg.includes('invalid credentials')
-      ) {
-        return { success: false, error: 'Wrong employee code/email or password.' };
-      }
-
-      // Email not confirmed
-      if (code === 'email_not_confirmed' || msg.includes('email not confirmed')) {
-        return { success: false, error: 'Account not activated. Contact admin.' };
-      }
-
-      // RLS or permission error
-      if (code === '42501' || status === 401 || status === 403 || msg.includes('permission denied')) {
-        return { success: false, error: 'Access denied. Contact admin.' };
-      }
-
-      // If any other connection error, try offline auth
+  if (error) {
+    // Real network failure
+    if (isNetworkError(error)) {
       const local = tryLocalOfflineAuth(cleanIdent, cleanPass);
       if (local) return local;
-
-      console.error('[authService] Supabase signInWithPassword error:', error);
-      return { success: false, error: error.message || 'Authentication failed. Please verify credentials.' };
+      return { success: false, error: 'Network connection lost. Please check Wi-Fi or mobile data.' };
     }
 
-    if (!data?.user) {
-      return { success: false, error: 'Authentication failed. No user record returned.' };
+    const msg = (error.message || '').toLowerCase();
+    const code = (error.code || '').toLowerCase();
+    const status = error.status || error.statusCode;
+
+    // Invalid credentials
+    if (
+      code === 'invalid_credentials' ||
+      (status === 400 && msg.includes('invalid login credentials')) ||
+      msg.includes('invalid credentials')
+    ) {
+      return { success: false, error: 'Employee code or password is incorrect.' };
     }
 
-    // 3. Fetch and verify user profile from public.profiles
+    // Rate limited
+    if (status === 429 || code === 'over_request_rate_limit' || msg.includes('rate limit')) {
+      return { success: false, error: 'Too many sign-in attempts. Please wait a moment and try again.' };
+    }
+
+    // Email not confirmed
+    if (code === 'email_not_confirmed' || msg.includes('email not confirmed')) {
+      return { success: false, error: 'Account inactive. Contact your supervisor.' };
+    }
+
+    // Banned / Inactive / RLS
+    if (code === '42501' || status === 401 || status === 403 || msg.includes('banned') || msg.includes('permission denied')) {
+      return { success: false, error: 'Account inactive. Contact your supervisor.' };
+    }
+
+    // Server error
+    if (status >= 500 && status <= 504) {
+      return { success: false, error: 'Server error during authentication. Please contact system admin.' };
+    }
+
+    // Try offline auth fallback for other errors
+    const local = tryLocalOfflineAuth(cleanIdent, cleanPass);
+    if (local) return local;
+
+    console.error('[authService] ERR_AUTH_FAIL:', code || status || 'UNKNOWN');
+    return { success: false, error: 'Employee code or password is incorrect.' };
+  }
+
+  if (!data?.user) {
+    return { success: false, error: 'Employee code or password is incorrect.' };
+  }
+
+  // 4. Fetch and verify user profile from public.profiles
+  try {
     const profileRes = await getCurrentUserProfile(data.user.id);
     if (!profileRes.success) {
-      // If profile fetch fails due to network, check offline profile
       const local = tryLocalOfflineAuth(cleanIdent, cleanPass);
       if (local) return local;
 
       await supabase.auth.signOut();
-      return { success: false, error: profileRes.error || 'No access profile found for this user. Contact admin.' };
+      return { success: false, error: profileRes.error || 'Account inactive. Contact your supervisor.' };
     }
 
     const profile = profileRes.data;
@@ -278,13 +341,13 @@ export async function login({ emailOrCode, password }) {
     // Check profile existence and role
     if (!profile || !profile.role) {
       await supabase.auth.signOut();
-      return { success: false, error: 'No access profile found for this user. Contact admin.' };
+      return { success: false, error: 'Account inactive. Contact your supervisor.' };
     }
 
     // Check if account is active
     if (profile.is_active === false) {
       await supabase.auth.signOut();
-      return { success: false, error: 'Your account is disabled. Contact admin.' };
+      return { success: false, error: 'Account inactive. Contact your supervisor.' };
     }
 
     // Stash successful profile for offline session continuity
@@ -301,15 +364,14 @@ export async function login({ emailOrCode, password }) {
       user: data.user,
       profile
     };
-  } catch (err) {
-    const local = tryLocalOfflineAuth(cleanIdent, cleanPass);
-    if (local) return local;
-
-    if (isNetworkError(err)) {
+  } catch (profErr) {
+    if (isNetworkError(profErr)) {
+      const local = tryLocalOfflineAuth(cleanIdent, cleanPass);
+      if (local) return local;
       return { success: false, error: 'Network connection lost. Please check Wi-Fi or mobile data.' };
     }
-    console.error('[authService] Unexpected exception during login:', err);
-    return { success: false, error: formatDatabaseError(err, 'Connection error during login.') };
+    console.error('[authService] ERR_PROFILE_EXCEPTION:', profErr.name || 'UNKNOWN');
+    return { success: false, error: 'Account inactive. Contact your supervisor.' };
   }
 }
 

@@ -32,3 +32,8 @@ scratch/
 *.db-shm
 *.db-wal
 
+# AI & Assistant local customization
+.agents/
+skills-lock.json
+
+

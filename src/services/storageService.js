@@ -113,13 +113,25 @@ export function clearDeletedReportIds() {
 let activeSupabaseClient = null;
 
 export function getSupabaseConfig() {
+  const envUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) || '';
+  const envKey = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) || '';
+
   try {
     const saved = localStorage.getItem(KEYS.SUPABASE_CONFIG);
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // Auto-purge rogue or stale Supabase URLs that don't match the active project
+      if (envUrl && parsed?.url && !parsed.url.includes('tedwgnybnkfzijvhvssx')) {
+        console.warn('[StorageService] Stale Supabase project detected in localStorage; resetting to active project.');
+        localStorage.removeItem(KEYS.SUPABASE_CONFIG);
+      } else if (parsed && parsed.url && parsed.anonKey) {
+        return parsed;
+      }
+    }
   } catch (e) {}
   return {
-    url: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) || '',
-    anonKey: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) || '',
+    url: envUrl,
+    anonKey: envKey,
     isConnected: false,
     lastTested: null,
     latencyMs: null
