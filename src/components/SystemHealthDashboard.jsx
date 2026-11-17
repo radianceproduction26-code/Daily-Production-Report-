@@ -218,7 +218,7 @@ export default function SystemHealthDashboard() {
             {metrics.connectionStatus === 'connected' ? 'Connected (Live)' : (metrics.connectionStatus === 'offline_mode' ? 'Offline-First Cache' : 'Local Standalone')}
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '6px' }}>
-            Latency: {metrics.latencyMs ? `${metrics.latencyMs} ms` : 'N/A (Local SQLite/Cache)'}
+            Latency: {metrics.latencyMs ? `${metrics.latencyMs} ms` : 'N/A (Offline / Local Cache)'}
           </div>
         </div>
 

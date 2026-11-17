@@ -20,7 +20,6 @@ import {
   X
 } from 'lucide-react';
 import { initializeStorage, getSystemSettings, saveSystemSettings, clearOperationalData, clearAllProductionEntries } from '../services/storageService';
-import TrialGoLiveDashboard from './TrialGoLiveDashboard';
 import SystemHealthDashboard from './SystemHealthDashboard';
 import AuditLogViewer from './AuditLogViewer';
 import DashboardView from './DashboardView';
@@ -33,7 +32,6 @@ export default function SettingsView({
   reports = [],
   settings = {},
   onUpdateSettings,
-  onOpenMockValidation,
   currentUser,
   rejectionCodes = [],
   downtimeCodes = []
@@ -171,30 +169,8 @@ export default function SettingsView({
           </p>
         </div>
 
-        {/* Diagnostic Selectors (Mobile 2x2 Grid, Desktop 4-col) */}
+        {/* Diagnostic Selectors (Mobile 2x2 Grid, Desktop 3-col) */}
         <div className="diagnostic-selectors-grid">
-          <button
-            type="button"
-            className={`btn ${activeAdvancedTool === 'trial' ? 'btn-primary' : 'btn-outline'} btn-sm`}
-            onClick={() => setActiveAdvancedTool(activeAdvancedTool === 'trial' ? null : 'trial')}
-            style={{
-              minHeight: '48px',
-              padding: '0 10px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              fontWeight: 700,
-              fontSize: '0.8rem',
-              boxShadow: activeAdvancedTool === 'trial' ? '0 0 0 2px var(--clr-primary)' : 'none'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <CheckCircle2 size={16} />
-              <span>Pilot Check</span>
-            </div>
-            {activeAdvancedTool === 'trial' ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
-
           <button
             type="button"
             className={`btn ${activeAdvancedTool === 'health' ? 'btn-primary' : 'btn-outline'} btn-sm`}
@@ -281,7 +257,6 @@ export default function SettingsView({
                   Active Tool
                 </span>
                 <span style={{ fontWeight: 700, fontSize: '12px', color: 'var(--clr-text)' }}>
-                  {activeAdvancedTool === 'trial' && 'Pilot Check (Trial Go-Live)'}
                   {activeAdvancedTool === 'health' && 'System Health & Cloud Sync'}
                   {activeAdvancedTool === 'audit' && 'Shop Floor Audit Trail'}
                   {activeAdvancedTool === 'analytics' && 'Analytics & OEE Dashboard'}
@@ -297,19 +272,6 @@ export default function SettingsView({
                 <span>Close</span>
               </button>
             </div>
-
-            {activeAdvancedTool === 'trial' && (
-              <TrialGoLiveDashboard
-                machines={machines}
-                moulds={moulds}
-                parts={parts}
-                usersList={usersList}
-                reports={reports}
-                systemSettings={settings}
-                onOpenMockValidation={onOpenMockValidation}
-                onUpdateSettings={onUpdateSettings}
-              />
-            )}
 
             {activeAdvancedTool === 'health' && (
               <SystemHealthDashboard />

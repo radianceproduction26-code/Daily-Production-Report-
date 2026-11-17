@@ -512,7 +512,7 @@ export default function MasterSheetView({
             <tbody>
               {filteredReports.length === 0 ? (
                 <tr>
-                  <td colSpan={15} style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--clr-text3)' }}>
+                  <td colSpan={16} style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--clr-text3)' }}>
                     <AlertTriangle size={32} style={{ margin: '0 auto 8px auto', opacity: 0.4 }} />
                     <p style={{ margin: 0, fontWeight: 600 }}>No production shift records found matching filters.</p>
                   </td>

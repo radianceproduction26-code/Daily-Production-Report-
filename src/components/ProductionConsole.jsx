@@ -19,7 +19,7 @@ import {
   Radio,
   SlidersHorizontal
 } from 'lucide-react';
-import { SHIFT_HOURS_DEFINITIONS, getShiftHours } from '../data/seedData';
+import { getShiftHours } from '../data/seedData';
 import { useI18n } from '../i18n/I18nContext';
 import { normalizeMachineCode } from '../services/storageService';
 

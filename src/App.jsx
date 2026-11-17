@@ -9,8 +9,6 @@ import MaterialModal from './components/MaterialModal';
 import CounterModal from './components/CounterModal';
 import ShiftSummaryDrawer from './components/ShiftSummaryDrawer';
 import ShiftSetupModal from './components/ShiftSetupModal';
-import MockShiftValidationModal from './components/MockShiftValidationModal';
-import TrialBanner from './components/TrialBanner';
 import LoginScreen from './components/LoginScreen';
 import {
   getActiveSession,
@@ -19,14 +17,13 @@ import {
   onAuthStateChange
 } from './services/authService';
 
-// Bug #3: Lazy-loaded heavy views — only fetched when the user navigates to that tab
+// Lazy-loaded heavy views — only fetched when the user navigates to that tab
 const DashboardView        = lazy(() => import('./components/DashboardView'));
 const ReportsView          = lazy(() => import('./components/ReportsView'));
 const MasterSheetView      = lazy(() => import('./components/MasterSheetView'));
 const PartMasterView       = lazy(() => import('./components/PartMasterView'));
 const SystemHealthDashboard = lazy(() => import('./components/SystemHealthDashboard'));
 const DataUploadCenter     = lazy(() => import('./components/DataUploadCenter'));
-const TrialGoLiveDashboard = lazy(() => import('./components/TrialGoLiveDashboard'));
 const AdminMastersView     = lazy(() => import('./components/AdminMastersView'));
 const AuditLogViewer       = lazy(() => import('./components/AuditLogViewer'));
 const SettingsView         = lazy(() => import('./components/SettingsView'));
@@ -41,13 +38,6 @@ import {
   SESSION_CLIENT_ID
 } from './services/cloudSyncService';
 import { I18nProvider } from './i18n/I18nContext';
-import {
-  fetchShiftReportsFromLiveDatabase,
-  fetchMetadataFromLiveDatabase,
-  saveShiftReportToLiveDatabase,
-  deleteShiftReportFromLiveDatabase,
-  savePartsToLiveDatabase
-} from './services/liveBackendService';
 
 import {
   initializeStorage,
@@ -79,7 +69,7 @@ import {
   addDynamicDowntimeCode,
   normalizeMachineCode
 } from './services/storageService';
-import { USERS, SHIFT_HOURS_DEFINITIONS } from './data/seedData';
+import { SHIFT_HOURS_DEFINITIONS } from './data/seedData';
 import { recordAuditLog } from './services/auditService';
 
 export default function App() {
@@ -188,44 +178,17 @@ export default function App() {
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [lastCloudSyncTime, setLastCloudSyncTime] = useState(null);
 
-  // Live & Cloud Sync: Fetch on startup & setup Realtime subscription
+  // Live & Cloud Sync: Fetch on startup & setup Realtime subscription via Supabase
   const handleRefreshCloud = async () => {
     setIsCloudSyncing(true);
     try {
-      // 0. Fetch latest from Live Online Database Server
-      try {
-        const liveRes = await fetchShiftReportsFromLiveDatabase();
-        if (liveRes && liveRes.success && liveRes.reports && liveRes.reports.length > 0) {
-          saveShiftReports(liveRes.reports);
-          setReports(liveRes.reports);
-        }
-        const liveMeta = await fetchMetadataFromLiveDatabase();
-        if (liveMeta) {
-          if (liveMeta.parts?.length > 0) { saveParts(liveMeta.parts, false); setParts(liveMeta.parts); }
-          if (liveMeta.machines?.length > 0) {
-            const normMachines = liveMeta.machines.map(m => ({
-              ...m,
-              machineNumber: m.machineNumber || m.machine_number || m.machineCode || m.id?.replace(/^m-mc-?/, 'MC'),
-              machineName: m.machineName || m.machine_name
-            }));
-            saveMachines(normMachines, false);
-            setMachines(normMachines);
-          }
-          if (liveMeta.mappings?.length > 0) { saveMachinePartMappings(liveMeta.mappings, false); setMappings(liveMeta.mappings); }
-          if (liveMeta.rejectionCodes?.length > 0) { saveRejectionCodes(liveMeta.rejectionCodes, false); setRejectionCodes(liveMeta.rejectionCodes); }
-          if (liveMeta.downtimeCodes?.length > 0) { saveDowntimeCodes(liveMeta.downtimeCodes, false); setDowntimeCodes(liveMeta.downtimeCodes); }
-        }
-      } catch (liveErr) {
-        console.warn('Live database pull notice:', liveErr);
-      }
-
-      // 1. Fetch shift reports from cloud
+      // 1. Fetch shift reports from Supabase cloud
       const res = await fetchShiftReportsFromCloud();
       if (res && res.success && res.reports) {
         setReports(res.reports);
       }
 
-      // 2. Fetch plant master data (parts, machines, mappings, rejections) from cloud
+      // 2. Fetch plant master data (parts, machines, mappings, rejections) from Supabase cloud
       const masterRes = await fetchMasterDataFromCloud();
       if (masterRes && masterRes.success) {
         if (masterRes.parts?.length > 0) setParts(masterRes.parts);
@@ -234,7 +197,7 @@ export default function App() {
         if (masterRes.rejectionCodes?.length > 0) setRejectionCodes(masterRes.rejectionCodes);
         if (masterRes.downtimeCodes?.length > 0) setDowntimeCodes(masterRes.downtimeCodes);
       } else if (masterRes && masterRes.notFound) {
-        // If cloud does not have master data snapshot yet, push this device's parts to cloud
+        // If cloud does not have master data snapshot yet, push local parts if present
         const localParts = getParts();
         if (localParts && localParts.length > 0) {
           pushMasterDataToCloud().catch(() => {});
@@ -338,7 +301,6 @@ export default function App() {
   const [isCounterModalOpen, setIsCounterModalOpen] = useState(false);
   const [isSummaryDrawerOpen, setIsSummaryDrawerOpen] = useState(false);
   const [isNewShiftModalOpen, setIsNewShiftModalOpen] = useState(false);
-  const [isMockValidationOpen, setIsMockValidationOpen] = useState(false);
 
   // Role-based navigation guards (Operator: Shifts only; Supervisor: Shifts, Master Sheet, Dashboard, Part Master; Admin: All)
   const handleTabChange = (targetTab) => {
@@ -392,21 +354,16 @@ export default function App() {
     if (res.success) {
       const freshReports = getShiftReports();
       setReports(freshReports);
-      deleteShiftReportFromLiveDatabase(reportId).catch(() => {});
       await deleteShiftReportFromCloud(reportId);
     } else {
       alert('Could not delete report: ' + (res.error || 'Unknown error'));
     }
   };
 
-  // Sync state helper: saves locally and pushes to Live Online Database + Supabase Cloud + Webhook
+  // Sync state helper: saves locally and pushes to Supabase Cloud & Webhook
   const syncReportUpdates = (updatedReport) => {
     saveActiveReport(updatedReport);
     setReports(getShiftReports());
-    // Push immediately to Live Online Database Server
-    saveShiftReportToLiveDatabase(updatedReport).catch(err => {
-      console.warn('Live database push notice:', err);
-    });
     // Auto-push to Supabase cloud and Google Sheet webhook
     pushShiftReportToCloud(updatedReport).catch(err => {
       console.warn('Background cloud sync push notice:', err);
@@ -899,11 +856,10 @@ export default function App() {
               machines={machines}
               moulds={moulds}
               parts={parts}
-              usersList={USERS}
+              usersList={[]}
               reports={reports}
               settings={settings}
               onUpdateSettings={handleUpdateSettings}
-              onOpenMockValidation={() => setIsMockValidationOpen(true)}
               currentUser={currentUser}
               rejectionCodes={rejectionCodes}
               downtimeCodes={downtimeCodes}
@@ -916,19 +872,6 @@ export default function App() {
 
           {activeTab === 'health' && (
             <SystemHealthDashboard />
-          )}
-
-          {activeTab === 'trial' && (
-            <TrialGoLiveDashboard
-              machines={machines}
-              moulds={moulds}
-              parts={parts}
-              usersList={USERS}
-              reports={reports}
-              systemSettings={settings}
-              onOpenMockValidation={() => setIsMockValidationOpen(true)}
-              onUpdateSettings={handleUpdateSettings}
-            />
           )}
         </Suspense>
       </main>
@@ -1020,14 +963,6 @@ export default function App() {
           currentUser={currentUser}
           onCreateShift={handleCreateNewShift}
           initialMachineNumber={setupTargetMachine}
-        />
-      )}
-
-      {/* Mock Shift Validation Guided Workflow */}
-      {isMockValidationOpen && (
-        <MockShiftValidationModal
-          isOpen={isMockValidationOpen}
-          onClose={() => setIsMockValidationOpen(false)}
         />
       )}
     </div>

@@ -1,154 +1,17 @@
-// Radiance Polymers - Digital Production Reporting System
-// Initial Master & Seed Data Configuration
+// Radiance Polymers - Production Shift Configurations & Master Data Defaults
+// Production-Ready: Zero mock/seed data. All master data is sourced from Supabase.
 
 export const INITIAL_REJECTION_CODES = [];
-
 export const INITIAL_DOWNTIME_CODES = [];
-
-export const INITIAL_OPERATORS = [
-  { id: 'op-01', operatorName: 'Shreyank', employeeCode: 'EMP-101', status: 'active' },
-  { id: 'op-02', operatorName: 'Dheera', employeeCode: 'EMP-102', status: 'active' },
-  { id: 'op-03', operatorName: 'Mahadev', employeeCode: 'EMP-103', status: 'active' },
-  { id: 'op-04', operatorName: 'Ravi', employeeCode: 'EMP-104', status: 'active' },
-  { id: 'op-05', operatorName: 'Bipendar', employeeCode: 'EMP-105', status: 'active' },
-  { id: 'op-06', operatorName: 'Ramkesh', employeeCode: 'EMP-106', status: 'active' }
-];
-
-export const INITIAL_MACHINES = [
-  {
-    id: 'm-mc-03',
-    machineNumber: 'MC03',
-    machineCode: 'MC03',
-    machineName: 'Milacron 450T',
-    make: 'Milacron',
-    model: '450T',
-    capacityTon: 450,
-    tonnage: 450,
-    status: 'active'
-  },
-  {
-    id: 'm-mc-04',
-    machineNumber: 'MC04',
-    machineCode: 'MC04',
-    machineName: 'Milacron 350T',
-    make: 'Milacron',
-    model: '350T',
-    capacityTon: 350,
-    tonnage: 350,
-    status: 'active'
-  },
-  {
-    id: 'm-mc-05',
-    machineNumber: 'MC05',
-    machineCode: 'MC05',
-    machineName: 'Milacron 250T',
-    make: 'Milacron',
-    model: '250T',
-    capacityTon: 250,
-    tonnage: 250,
-    status: 'active'
-  },
-  {
-    id: 'm-mc-06',
-    machineNumber: 'MC06',
-    machineCode: 'MC06',
-    machineName: 'Milacron 180T',
-    make: 'Milacron',
-    model: '180T',
-    capacityTon: 180,
-    tonnage: 180,
-    status: 'active'
-  }
-];
-
+export const INITIAL_OPERATORS = [];
+export const INITIAL_MACHINES = [];
 export const INITIAL_MOULDS = [];
-
 export const INITIAL_PARTS = [];
-
-
-export const INITIAL_MATERIALS = [
-  {
-    id: 'mat-pp-01',
-    materialCode: 'MAT-PP-01',
-    materialName: 'PP Copolymer 575P',
-    materialType: 'Virgin Resin',
-    grade: 'Sabic PP 575P Injection Grade',
-    supplier: 'SABIC India',
-    standardPricePerKg: 115.0,
-    unit: 'kg',
-    status: 'active'
-  },
-  {
-    id: 'mat-abs-02',
-    materialCode: 'MAT-ABS-02',
-    materialName: 'ABS Hi-Impact AF312',
-    materialType: 'Virgin Resin',
-    grade: 'LG Chem AF312 Flame Retardant',
-    supplier: 'LG Chem',
-    standardPricePerKg: 185.0,
-    unit: 'kg',
-    status: 'active'
-  },
-  {
-    id: 'mat-pa6-01',
-    materialCode: 'MAT-PA6-01',
-    materialName: 'Nylon 6 30% GF',
-    materialType: 'Engineering Resin',
-    grade: 'BASF Ultramid B3EG6 Heat Stab',
-    supplier: 'BASF',
-    standardPricePerKg: 290.0,
-    unit: 'kg',
-    status: 'active'
-  },
-  {
-    id: 'mat-r001',
-    materialCode: 'R001',
-    materialName: 'Virgin Resin PP Natural (R001)',
-    materialType: 'Virgin Resin',
-    grade: 'Injection Grade PP R001',
-    supplier: 'Reliance Industries',
-    standardPricePerKg: 120.0,
-    unit: 'kg',
-    status: 'active'
-  },
-  {
-    id: 'mat-mb01',
-    materialCode: 'MB01',
-    materialName: 'Black Color Masterbatch (MB01)',
-    materialType: 'Masterbatch',
-    grade: 'Carbon Black MB-01 40% Loading',
-    supplier: 'Clariant Polymers',
-    standardPricePerKg: 240.0,
-    unit: 'kg',
-    status: 'active'
-  },
-  {
-    id: 'mat-pc-01',
-    materialCode: 'MAT-PC-01',
-    materialName: 'PC Optical Clear 2805',
-    materialType: 'Engineering Resin',
-    grade: 'Covestro Makrolon 2805 UV',
-    supplier: 'Covestro',
-    standardPricePerKg: 320.0,
-    unit: 'kg',
-    status: 'active'
-  },
-];
-
+export const INITIAL_MATERIALS = [];
 export const INITIAL_WORK_ORDERS = [];
-
 export const INITIAL_MACHINE_PART_MAPPINGS = [];
-
-// Supervisor Master for Pilot
-export const SUPERVISORS = [
-  { id: 'sup-lokesh', fullName: 'Mr. Lokesh', name: 'Mr. Lokesh', role: 'supervisor', status: 'active' },
-  { id: 'sup-akshay', fullName: 'Mr. Akshay', name: 'Mr. Akshay', role: 'supervisor', status: 'active' }
-];
-
-export const USERS = [
-  { id: 'sup-lokesh', fullName: 'Mr. Lokesh', email: 'lokesh@radiancepolymers.com', role: 'supervisor', badgeId: 'SUP-01' },
-  { id: 'sup-akshay', fullName: 'Mr. Akshay', email: 'akshay@radiancepolymers.com', role: 'supervisor', badgeId: 'SUP-02' },
-];
+export const SUPERVISORS = [];
+export const USERS = [];
 
 export const SHIFT_A_HOURS_DEFINITIONS = [
   { index: 1, label: '08:00 - 09:00', startHour: 8 },
@@ -189,9 +52,7 @@ export function getShiftHours(shift = 'Shift A') {
   return SHIFT_A_HOURS_DEFINITIONS;
 }
 
-// Security: admin email list is configured via VITE_AUTO_EMAIL_RECIPIENTS env variable
-// (comma-separated). If not set, defaults to empty list (no auto-emails sent).
-// Set in .env: VITE_AUTO_EMAIL_RECIPIENTS=planthead@example.com,quality@example.com
+// Auto-email recipient configuration from environment
 const _envEmails = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_AUTO_EMAIL_RECIPIENTS)
   ? import.meta.env.VITE_AUTO_EMAIL_RECIPIENTS.split(',').map(e => e.trim()).filter(Boolean)
   : [];

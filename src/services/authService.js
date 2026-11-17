@@ -43,27 +43,6 @@ export async function resolveEmailFromIdentifier(identifier) {
     return { email: clean.toLowerCase(), error: null };
   }
 
-  // Pre-mapped standard plant codes (aligned with live auth.users & public.profiles)
-  const KNOWN_CODES = {
-    'adm-001': 'adm-001@radiance.local',
-    'adm-corp': 'admin@radiance.com',
-    'sup-01': 'sup-01@radiance.local',
-    'sup-02': 'sup-02@radiance.local',
-    'sup-lokesh': 'lokesh@radiance.com',
-    'sup-akshay': 'akshay@radiance.com',
-    'emp-101': 'emp-101@radiance.local',
-    'emp-102': 'emp-102@radiance.local',
-    'emp-103': 'emp-103@radiance.local',
-    'emp-104': 'emp-104@radiance.local',
-    'emp-105': 'emp-105@radiance.local',
-    'emp-106': 'emp-106@radiance.local'
-  };
-
-  const lowerCode = clean.toLowerCase();
-  if (KNOWN_CODES[lowerCode]) {
-    return { email: KNOWN_CODES[lowerCode], error: null };
-  }
-
   // Employee Code input requires configured Supabase client
   if (!isSupabaseConfigured || !supabase) {
     return {
@@ -115,89 +94,26 @@ export async function resolveEmailFromIdentifier(identifier) {
   }
 }
 
-const SEED_USERS_LOCAL = [
-  {
-    identifiers: ['adm-001', 'adm-001@radiance.local'],
-    password: 'Admin@123',
-    user: { id: 'fd8fb2ed-7784-4fe2-a16a-f047864f48e5', email: 'adm-001@radiance.local', aud: 'authenticated' },
-    profile: { id: 'fd8fb2ed-7784-4fe2-a16a-f047864f48e5', full_name: 'Plant Admin', employee_code: 'ADM-001', role: 'admin', is_active: true }
-  },
-  {
-    identifiers: ['adm-corp', 'admin@radiance.com'],
-    password: 'Admin@123',
-    user: { id: '15ca9616-ad4a-43c6-936c-2715ebe799b2', email: 'admin@radiance.com', aud: 'authenticated' },
-    profile: { id: '15ca9616-ad4a-43c6-936c-2715ebe799b2', full_name: 'Plant Admin (Email)', employee_code: 'ADM-CORP', role: 'admin', is_active: true }
-  },
-  {
-    identifiers: ['sup-01', 'lokesh@radiance.com', 'sup-01@radiance.local'],
-    password: 'Super@123',
-    user: { id: 'sup-01-uid', email: 'lokesh@radiance.com', aud: 'authenticated' },
-    profile: { id: 'sup-01-uid', full_name: 'Mr. Lokesh', employee_code: 'SUP-01', role: 'supervisor', is_active: true }
-  },
-  {
-    identifiers: ['sup-02', 'akshay@radiance.com', 'sup-02@radiance.local'],
-    password: 'Super@123',
-    user: { id: 'sup-02-uid', email: 'akshay@radiance.com', aud: 'authenticated' },
-    profile: { id: 'sup-02-uid', full_name: 'Mr. Akshay', employee_code: 'SUP-02', role: 'supervisor', is_active: true }
-  },
-  {
-    identifiers: ['emp-101', 'emp-101@radiance.local'],
-    password: 'Op@1234',
-    user: { id: 'emp-101-uid', email: 'emp-101@radiance.local', aud: 'authenticated' },
-    profile: { id: 'emp-101-uid', full_name: 'Shreyank', employee_code: 'EMP-101', role: 'operator', is_active: true }
-  },
-  {
-    identifiers: ['emp-102', 'emp-102@radiance.local'],
-    password: 'Op@1234',
-    user: { id: 'emp-102-uid', email: 'emp-102@radiance.local', aud: 'authenticated' },
-    profile: { id: 'emp-102-uid', full_name: 'Dheera', employee_code: 'EMP-102', role: 'operator', is_active: true }
-  },
-  {
-    identifiers: ['emp-103', 'emp-103@radiance.local'],
-    password: 'Op@1234',
-    user: { id: 'emp-103-uid', email: 'emp-103@radiance.local', aud: 'authenticated' },
-    profile: { id: 'emp-103-uid', full_name: 'Mahadev', employee_code: 'EMP-103', role: 'operator', is_active: true }
-  },
-  {
-    identifiers: ['emp-104', 'emp-104@radiance.local'],
-    password: 'Op@1234',
-    user: { id: 'emp-104-uid', email: 'emp-104@radiance.local', aud: 'authenticated' },
-    profile: { id: 'emp-104-uid', full_name: 'Ravi', employee_code: 'EMP-104', role: 'operator', is_active: true }
-  },
-  {
-    identifiers: ['emp-105', 'emp-105@radiance.local'],
-    password: 'Op@1234',
-    user: { id: 'emp-105-uid', email: 'emp-105@radiance.local', aud: 'authenticated' },
-    profile: { id: 'emp-105-uid', full_name: 'Bipendar', employee_code: 'EMP-105', role: 'operator', is_active: true }
-  },
-  {
-    identifiers: ['emp-106', 'emp-106@radiance.local'],
-    password: 'Op@1234',
-    user: { id: 'emp-106-uid', email: 'emp-106@radiance.local', aud: 'authenticated' },
-    profile: { id: 'emp-106-uid', full_name: 'Ramkesh', employee_code: 'EMP-106', role: 'operator', is_active: true }
-  }
-];
-
-function tryLocalOfflineAuth(ident, pass) {
+function tryLocalOfflineAuth(ident) {
   const cleanId = (ident || '').trim().toLowerCase();
-  const cleanPass = (pass || '').trim();
-  const match = SEED_USERS_LOCAL.find(u => 
-    u.identifiers.includes(cleanId) && u.password === cleanPass
-  );
-  if (match) {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('rp_offline_auth_session', JSON.stringify({
-        user: match.user,
-        profile: match.profile,
-        timestamp: Date.now()
-      }));
+  if (typeof localStorage !== 'undefined') {
+    const cached = localStorage.getItem('rp_offline_auth_session');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        const profile = parsed.profile || {};
+        const empCode = (profile.employee_code || '').toLowerCase();
+        const email = (parsed.user?.email || '').toLowerCase();
+        if (cleanId && (cleanId === empCode || cleanId === email)) {
+          return {
+            success: true,
+            user: parsed.user,
+            profile: parsed.profile,
+            isOffline: true
+          };
+        }
+      } catch (_) {}
     }
-    return {
-      success: true,
-      user: match.user,
-      profile: match.profile,
-      isOffline: true
-    };
   }
   return null;
 }
@@ -216,13 +132,13 @@ export async function login({ emailOrCode, password }) {
 
   // 1. Device is completely offline
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-    const local = tryLocalOfflineAuth(cleanIdent, cleanPass);
+    const local = tryLocalOfflineAuth(cleanIdent);
     if (local) return local;
-    return { success: false, error: 'You appear to be offline.' };
+    return { success: false, error: 'You are offline. An initial online connection to Supabase is required to sign in.' };
   }
 
   if (!isSupabaseConfigured || !supabase) {
-    const local = tryLocalOfflineAuth(cleanIdent, cleanPass);
+    const local = tryLocalOfflineAuth(cleanIdent);
     if (local) return local;
     return {
       success: false,
@@ -233,7 +149,7 @@ export async function login({ emailOrCode, password }) {
   // 2. Resolve Identifier to registered Auth Email
   const resolveResult = await resolveEmailFromIdentifier(cleanIdent);
   if (resolveResult.error) {
-    const local = tryLocalOfflineAuth(cleanIdent, cleanPass);
+    const local = tryLocalOfflineAuth(cleanIdent);
     if (local) return local;
     return { success: false, error: resolveResult.error };
   }
@@ -275,7 +191,7 @@ export async function login({ emailOrCode, password }) {
   if (error) {
     // Real network failure
     if (isNetworkError(error)) {
-      const local = tryLocalOfflineAuth(cleanIdent, cleanPass);
+      const local = tryLocalOfflineAuth(cleanIdent);
       if (local) return local;
       return { success: false, error: 'Network connection lost. Please check Wi-Fi or mobile data.' };
     }
@@ -314,7 +230,7 @@ export async function login({ emailOrCode, password }) {
     }
 
     // Try offline auth fallback for other errors
-    const local = tryLocalOfflineAuth(cleanIdent, cleanPass);
+    const local = tryLocalOfflineAuth(cleanIdent);
     if (local) return local;
 
     console.error('[authService] ERR_AUTH_FAIL:', code || status || 'UNKNOWN');
@@ -329,7 +245,7 @@ export async function login({ emailOrCode, password }) {
   try {
     const profileRes = await getCurrentUserProfile(data.user.id);
     if (!profileRes.success) {
-      const local = tryLocalOfflineAuth(cleanIdent, cleanPass);
+      const local = tryLocalOfflineAuth(cleanIdent);
       if (local) return local;
 
       await supabase.auth.signOut();
@@ -366,7 +282,7 @@ export async function login({ emailOrCode, password }) {
     };
   } catch (profErr) {
     if (isNetworkError(profErr)) {
-      const local = tryLocalOfflineAuth(cleanIdent, cleanPass);
+      const local = tryLocalOfflineAuth(cleanIdent);
       if (local) return local;
       return { success: false, error: 'Network connection lost. Please check Wi-Fi or mobile data.' };
     }
