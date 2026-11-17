@@ -715,7 +715,7 @@ export default function App() {
   const handleUpdateDowntimeCodes = (d) => { setDowntimeCodes(d); saveDowntimeCodes(d); };
   const handleUpdateSettings = (s) => { setSettings(s); saveSystemSettings(s); };
 
-  const pilotReadiness = checkPilotReadiness({ machines, parts, mappings, usersList: USERS });
+  const pilotReadiness = checkPilotReadiness({ machines, parts, mappings });
 
   const handleOpenNewShiftModal = (targetMachine = null) => {
     if (!pilotReadiness.isReady) {

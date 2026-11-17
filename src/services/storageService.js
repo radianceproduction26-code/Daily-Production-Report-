@@ -236,13 +236,6 @@ export function migrateMachineNumbering() {
         return m;
       });
 
-      // Ensure all 14 standard machines exist if master had older smaller fleet
-      INITIAL_MACHINES.forEach(initM => {
-        if (!machines.some(m => m.machineNumber === initM.machineNumber)) {
-          machines.push(initM);
-          modified = true;
-        }
-      });
 
       if (modified) {
         localStorage.setItem(KEYS.MACHINES, JSON.stringify(machines));
@@ -966,41 +959,35 @@ export function isPartApprovedForMachine(machineCode, partCode, mappings = null)
   });
 }
 
-// Supervisor Master - Strictly Mr. Lokesh and Mr. Akshay
+// Supervisor Master
 export function getSupervisors() {
-  if (typeof localStorage === 'undefined') return SUPERVISORS;
+  if (typeof localStorage === 'undefined') return [];
   const raw = localStorage.getItem(KEYS.SUPERVISORS);
-  if (!raw) return SUPERVISORS;
+  if (!raw) return [];
   try {
-    const parsed = JSON.parse(raw);
-    const cleaned = parsed.filter(s => {
-      const name = (s.fullName || s.name || '').trim();
-      return name === 'Mr. Lokesh' || name === 'Mr. Akshay';
-    });
-    return cleaned.length > 0 ? cleaned : SUPERVISORS;
+    return JSON.parse(raw) || [];
   } catch (e) {
-    return SUPERVISORS;
+    return [];
   }
 }
 export function saveSupervisors(supervisors) {
   if (typeof localStorage !== 'undefined') {
-    // Enforce only Lokesh and Akshay
-    const cleaned = (supervisors || []).filter(s => {
-      const name = (s.fullName || s.name || '').trim();
-      return name === 'Mr. Lokesh' || name === 'Mr. Akshay';
-    });
-    localStorage.setItem(KEYS.SUPERVISORS, JSON.stringify(cleaned.length > 0 ? cleaned : SUPERVISORS));
+    localStorage.setItem(KEYS.SUPERVISORS, JSON.stringify(supervisors || []));
   }
 }
 
 // Operator Master
 export function getOperators() {
-  if (typeof localStorage === 'undefined') return INITIAL_OPERATORS;
-  return JSON.parse(localStorage.getItem(KEYS.OPERATORS) || JSON.stringify(INITIAL_OPERATORS));
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    return JSON.parse(localStorage.getItem(KEYS.OPERATORS) || '[]');
+  } catch (e) {
+    return [];
+  }
 }
 export function saveOperators(operators) {
   if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(KEYS.OPERATORS, JSON.stringify(operators));
+    localStorage.setItem(KEYS.OPERATORS, JSON.stringify(operators || []));
   }
 }
 
@@ -1039,15 +1026,17 @@ export function clearOperationalData() {
 
   // 3. Do NOT delete Rejection Master, Downtime Master, Supervisor Master, Operator Master
   if (!localStorage.getItem(KEYS.REJECTION_CODES)) {
-    localStorage.setItem(KEYS.REJECTION_CODES, JSON.stringify(INITIAL_REJECTION_CODES));
+    localStorage.setItem(KEYS.REJECTION_CODES, JSON.stringify([]));
   }
   if (!localStorage.getItem(KEYS.DOWNTIME_CODES)) {
-    localStorage.setItem(KEYS.DOWNTIME_CODES, JSON.stringify(INITIAL_DOWNTIME_CODES));
+    localStorage.setItem(KEYS.DOWNTIME_CODES, JSON.stringify([]));
   }
   if (!localStorage.getItem(KEYS.OPERATORS)) {
-    localStorage.setItem(KEYS.OPERATORS, JSON.stringify(INITIAL_OPERATORS));
+    localStorage.setItem(KEYS.OPERATORS, JSON.stringify([]));
   }
-  localStorage.setItem(KEYS.SUPERVISORS, JSON.stringify(SUPERVISORS));
+  if (!localStorage.getItem(KEYS.SUPERVISORS)) {
+    localStorage.setItem(KEYS.SUPERVISORS, JSON.stringify([]));
+  }
 }
 
 export function saveSystemSettings(settings) {

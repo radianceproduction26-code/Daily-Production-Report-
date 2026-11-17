@@ -42,7 +42,7 @@ export default function DashboardView({
   isSyncing = false,
   onDeleteReport
 }) {
-  const { t, getRejectionDescription, getDowntimeCategory } = useI18n();
+  const { t, getRejectionDescription, getDowntimeDescription, getDowntimeCategory } = useI18n();
   const [dashboardMode, setDashboardMode] = useState(
     initialSubTab === 'mastersheet' ? 'mastersheet' : (initialSubTab === 'reports' ? 'reports' : 'oee')
   ); // 'oee', 'mastersheet', 'reports', 'pilot', 'management'
